@@ -14,6 +14,7 @@ from .windows import enable_dpi_awareness
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="AutoFarmSeal research prototype")
+    parser.add_argument("--capture-self-test", type=Path, help="Windows-only capture of an owned test window, with JSON result; no OS inputs")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--data-dir", type=Path, help="Optional independent local data directory")
     parser.add_argument("--self-check", action="store_true", help="Read local profiles; never capture or send input")
@@ -25,6 +26,8 @@ def main() -> int:
         parser.error("--guide-smoke requires --smoke-test")
     if args.screenshot and not args.smoke_test:
         parser.error("--screenshot requires --smoke-test")
+    if args.capture_self_test and (args.smoke_test or not args.data_dir or sys.platform != "win32"):
+        parser.error("--capture-self-test needs Windows and an explicit --data-dir; not --smoke-test")
     store = Store(args.data_dir)
     if args.self_check:
         profiles, errors = store.list_profiles()
@@ -38,6 +41,9 @@ def main() -> int:
     app = QApplication(sys.argv[:1])
     app.setApplicationName("AutoFarmSeal")
     app.setOrganizationName("AutoFarmSeal")
+    if args.capture_self_test:
+        from .capture_selftest import run
+        return run(app, store, args.capture_self_test)
     try:
         window = MainWindow(store, smoke=args.smoke_test)
     except Exception as exc:

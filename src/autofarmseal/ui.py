@@ -59,6 +59,7 @@ class MainWindow(QMainWindow):
         self.smoke = smoke
         self.native = None
         self.guide = None
+        self.preparation = None
         self.capture_wait = None
         self.platform_error = ""
         if sys.platform == "win32" and not smoke:
@@ -202,7 +203,7 @@ class MainWindow(QMainWindow):
             setup.addWidget(b)
         advanced_layout.addLayout(setup)
         self.live = QCheckBox("Izinkan klik dan tombol otomatis (setelah persiapan teruji)")
-        self.live.setEnabled(self.native is not None)
+        self.live.setEnabled(bool(self.native and self.native.input_available))
         advanced_layout.addWidget(self.live)
         self.permitted = QCheckBox("Saya menguji di lingkungan yang mengizinkan otomatisasi.")
         advanced_layout.addWidget(self.permitted)
@@ -353,8 +354,10 @@ class MainWindow(QMainWindow):
             return
         ready = not self.current().validate(calibrated=True)
         self.guide_hint.setText(hint_for(self.current()))
-        self.observe_button.setEnabled(ready)
-        self.prepare_button.setEnabled(ready)
+        # These buttons route to setup with an explanation, never silently do nothing.
+        self.observe_button.setEnabled(True)
+        self.prepare_button.setEnabled(True)
+        self.observe_button.setToolTip("Uji satu gambar" if ready else "Buka panduan untuk menambahkan contoh dahulu")
         if hasattr(self, "start_button"):
             self.start_button.setText("Mulai farming   F8" if self.live.isChecked()
                                       else "Amati game (tanpa klik)   F8")
@@ -371,46 +374,161 @@ class MainWindow(QMainWindow):
         self.resize(self.width(), min(max(580, self.body.sizeHint().height() + 25), max(400, limit)))
 
     def guided_setup(self, mode="monster"):
+        if self.guide is not None:
+            self.guide.showNormal()
+            self.guide.raise_()
+            return
         self.worker.command("pause")
         self.live.setChecked(False)
         try:
-            profile = self.collect()
+            # Unrelated unfinished potion fields must not prevent taking an image.
+            profile = self.current().clone()
             can_capture = self.native is not None and self.spec(profile).window is not None
             dialog = SetupGuide(profile, self.store, mode=mode, can_capture=can_capture, parent=self)
             self.guide = dialog
             dialog.capture_requested.connect(self.guide_capture)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                index = next(i for i, p in enumerate(self.profiles) if p.id == dialog.p.id)
-                self.profiles[index] = dialog.p
-                self.refresh_profiles(dialog.p.id)
+            dialog.capture_cancelled.connect(self.cancel_snapshot)
+            dialog.choose_window_requested.connect(self.choose_capture_window)
+            dialog.finished.connect(lambda result, d=dialog: self.guide_finished(d, result))
+            window = self.spec(profile).window
+            dialog.window_hint.setText("Game: " + window.title if window else
+                                       "Belum memilih game. Tekan Pilih / ganti jendela game, atau pakai file gambar.")
+            # Never exec() a guide that must hide itself during screen capture.
+            dialog.open()
         except (ValueError, OSError) as exc:
-            self.error(exc)
-        finally:
-            self.worker.command("pause")
-            self.capture_wait = None
             self.guide = None
-            self.showNormal()
-            self.refresh_guidance()
+            self.error(exc)
+
+    def guide_finished(self, dialog, result):
+        if self.guide is not dialog:
+            return
+        self.worker.command("pause")
+        self.capture_wait = None
+        self.guide = None
+        if result == QDialog.DialogCode.Accepted and dialog.saved:
+            index = next(i for i, p in enumerate(self.profiles) if p.id == dialog.p.id)
+            self.profiles[index] = dialog.p
+            self.refresh_profiles(dialog.p.id)
+        self.showNormal()
+        self.refresh_guidance()
+        if self.preparation is not None and not self.worker.closing.is_set():
+            self.preparation = None
+            QTimer.singleShot(0, self.farming_setup)
+        dialog.deleteLater()
+
+    def choose_capture_window(self):
+        owner = self.guide or self
+        if self.capture_wait:
+            return False
+        if self.native is None:
+            message = "Akses window Windows belum tersedia. " + (self.platform_error or
+                      "Jalankan versi Windows, atau pakai screenshot yang sudah ada.")
+            if self.guide:
+                self.guide.feedback.setText(message)
+            else:
+                self.error(message)
+            return False
+        self.refresh_windows()
+        choices = [w for w in self.windows if w]
+        if not choices:
+            message = "Tidak ada game terlihat. Buka game (jangan diminimalkan), lalu tekan Pilih game lagi."
+            if self.guide:
+                self.guide.feedback.setText(message)
+            else:
+                self.error(message)
+            return False
+        labels = [f"{w.title} | {w.rect.w} x {w.rect.h} | {w.hwnd}" for w in choices]
+        preferred = self.spec(self.current()).window
+        index = next((i for i, w in enumerate(choices) if preferred and w.hwnd == preferred.hwnd), 0)
+        text, ok = QInputDialog.getItem(owner, "Pilih game yang gambarnya akan diambil",
+                                       "Jendela game:", labels, index, False)
+        if not ok:
+            return False
+        chosen = choices[labels.index(text)]
+        self.window_combo.setCurrentIndex(self.window_combo.findData(chosen.hwnd))
+        if self.guide:
+            self.guide.can_capture = True
+            self.guide.window_hint.setText("Game: " + chosen.title)
+            self.guide.feedback.setText("Game dipilih. Tekan Ambil gambar dari game.")
+            self.guide.update_buttons()
+        return True
 
     def request_snapshot(self, purpose, profile):
+        if self.capture_wait is not None:
+            return  # Double clicks cannot replace/cancel a still-pending request.
         spec = self.spec(profile)
         if not self.native or not spec.window:
-            raise ValueError("Pilih game pada daftar di atas dahulu. Untuk mencoba tanpa game, "
-                             "gunakan tombol Pakai gambar yang sudah ada di panduan.")
-        self.worker.command("snapshot", spec)
-        self.capture_wait = (purpose, self.worker.epoch, time.monotonic())
-        if purpose == "guide":
+            raise ValueError("Pilih game dahulu lewat Pilih / ganti jendela game. "
+                             "Alternatif: Pakai gambar yang sudah ada.")
+        self.native.window(spec.window.hwnd)  # Detect a closed/minimized selection before hiding.
+        epoch = self.worker.command("snapshot", spec)
+        self.capture_wait = (purpose, epoch, time.monotonic())
+        if purpose == "guide" and self.guide:
             self.guide.capture_pending = True
+            self.guide.feedback.setText("Mengambil gambar. Klik game yang dipilih; menunggu hingga 15 detik.")
             self.guide.update_buttons()
-            self.guide.showMinimized()
+            self.guide.hide()
+        if self.preview_dialog:
+            self.preview_dialog.hide()
         self.showMinimized()
+        # Normal OS focus request only; no fake Alt key, hooks or input bypass.
+        def activate():
+            if self.capture_wait and self.capture_wait[1] == epoch and self.worker.epoch == epoch:
+                try:
+                    self.native.request_foreground(spec.window)
+                except Exception as exc:
+                    self.worker.event("Aktivasi game belum berhasil: " + str(exc))
+        QTimer.singleShot(150, activate)
 
     def guide_capture(self):
-        if self.guide:
+        if self.guide and not self.capture_wait:
             try:
+                if not self.spec(self.guide.p).window:
+                    if not self.choose_capture_window():
+                        return
                 self.request_snapshot("guide", self.guide.p)
-            except (ValueError, OSError) as exc:
-                self.guide.feedback.setText(str(exc))
+            except Exception as exc:
+                self.guide.feedback.setText(f"Gambar belum diambil: {type(exc).__name__}: {exc}")
+                self.guide.capture_pending = False
+                self.guide.update_buttons()
+
+    def cancel_snapshot(self):
+        if self.capture_wait is None:
+            return
+        self.worker.command("pause")
+        self.finish_snapshot(error="Gambar belum diambil: pengambilan dibatalkan. Kamu dapat mencoba lagi.")
+
+    def finish_snapshot(self, frame=None, error=None):
+        if self.capture_wait is None:
+            return
+        purpose, _, _ = self.capture_wait
+        self.capture_wait = None
+        self.showNormal()
+        self.activateWindow()
+        if purpose == "guide" and self.guide:
+            guide = self.guide
+            guide.capture_pending = False
+            guide.showNormal()
+            guide.raise_()
+            guide.activateWindow()
+            if frame is not None and not error:
+                try:
+                    if guide.receive_frame(frame):
+                        guide.feedback.setText(f"Gambar masuk: {frame.shape[1]} x {frame.shape[0]}. "
+                                               "Tekan Lanjut untuk menandai area pencarian.")
+                except Exception as exc:
+                    guide.feedback.setText(f"Gambar belum bisa dipakai: {exc}")
+            else:
+                guide.feedback.setText("Gambar belum diambil. " + (error or "Coba lagi."))
+            guide.update_buttons()
+        elif frame is not None and not error:
+            if purpose == "preview":
+                self.test_snapshot(frame)
+            else:
+                self.calibration(frame=frame)
+        elif error:
+            self.reason.setText(error)
+            QMessageBox.warning(self, "Gambar belum diambil", error)
 
     def observe_once(self):
         self.worker.command("pause")
@@ -421,7 +539,7 @@ class MainWindow(QMainWindow):
                 self.guided_setup()
                 return
             if self.spec(p).window and self.native:
-                self.reason.setText("Kembali ke game. Gambar diambil dalam 4 detik, lalu hasil otomatis dibuka.")
+                self.reason.setText("Gambar diambil saat game aktif (maksimal 15 detik), lalu hasil otomatis dibuka.")
                 self.request_snapshot("preview", p)
             else:
                 from PySide6.QtWidgets import QFileDialog
@@ -449,20 +567,30 @@ class MainWindow(QMainWindow):
     def farming_setup(self):
         self.worker.command("pause")
         self.live.setChecked(False)
-        while not self.worker.closing.is_set():
-            try:
-                dialog = FarmingPreparation(self.collect(), self)
-            except (ValueError, OSError) as exc:
-                self.error(exc)
+        if self.guide is not None:
+            self.guide.showNormal()
+            return
+        try:
+            dialog = FarmingPreparation(self.current().clone(), self)
+        except (ValueError, OSError) as exc:
+            self.error(exc)
+            return
+        self.preparation = dialog
+        def finished(result):
+            if self.worker.closing.is_set():
                 return
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                break
-            if dialog.task == "controls":
+            if result != QDialog.DialogCode.Accepted:
+                self.preparation = None
+            elif dialog.task == "controls":
+                self.preparation = None
                 self.advanced_button.setChecked(True)
                 self.simple_controls()
+                QTimer.singleShot(0, self.farming_setup)
             else:
                 self.guided_setup(dialog.task)
-        self.refresh_guidance()
+            dialog.deleteLater()
+        dialog.finished.connect(finished)
+        dialog.open()
 
     def new_profile(self):
         self.worker.command("pause")
@@ -608,6 +736,7 @@ class MainWindow(QMainWindow):
         if (kind == "arm" and epoch == self.worker.epoch
                 and not self.worker.closing.is_set()
                 and self.guide is None
+                and self.capture_wait is None
                 and QApplication.activeModalWidget() is None):
             self.start_session()
 
@@ -635,37 +764,22 @@ class MainWindow(QMainWindow):
                 self.displayed_frame = obs.captured_at
                 self.preview_canvas.boxes = self.preview_boxes
                 self.preview_canvas.set_frame(frame)
-        captured = snap.get("captured")
         if self.capture_wait is not None:
-            purpose, epoch, requested = self.capture_wait
-            cancelled = epoch != self.worker.epoch or time.monotonic() - requested > 12
-            failed = time.monotonic() - requested > 0.5 and snap.get("state") in {"Dijeda", "Berhenti"}
-            if captured is not None or cancelled or failed:
-                self.capture_wait = None
-                self.showNormal()
-                self.activateWindow()
-                if purpose == "guide" and self.guide:
-                    self.guide.capture_pending = False
-                    self.guide.showNormal()
-                    self.guide.activateWindow()
-                    if captured is not None and not cancelled:
-                        try:
-                            self.guide.set_frame(captured)
-                        except ValueError as exc:
-                            self.guide.feedback.setText(str(exc))
-                    else:
-                        self.worker.command("pause")
-                        self.guide.feedback.setText("Gambar belum diambil. Aktifkan game dalam 4 detik "
-                                                    "setelah menekan Ambil gambar, lalu coba lagi.")
-                    self.guide.update_buttons()
-                elif captured is not None and not cancelled:
-                    if purpose == "preview":
-                        self.test_snapshot(captured)
-                    else:
-                        self.calibration(frame=captured)
-                else:
-                    self.worker.command("pause")
-                    self.reason.setText("Gambar belum diambil. Pastikan game aktif, lalu coba lagi.")
+            _, epoch, requested = self.capture_wait
+            matched = snap.get("capture_epoch") == epoch
+            if epoch != self.worker.epoch:
+                self.finish_snapshot(error="Permintaan dibatalkan oleh Jeda/Berhenti atau perubahan pengaturan.")
+            elif time.monotonic() - requested > 20:
+                self.worker.command("pause")
+                self.finish_snapshot(error="Pengambilan melewati batas waktu. Pastikan game terlihat; "
+                                           "coba lagi atau pakai screenshot dari file.")
+            elif matched and snap.get("capture_error"):
+                # Preserve the actual adapter/geometry/dependency error, not a generic focus message.
+                self.finish_snapshot(error=snap["capture_error"])
+            elif matched and snap.get("captured") is not None:
+                self.finish_snapshot(frame=snap["captured"])
+            elif matched and self.guide:
+                self.guide.feedback.setText(snap.get("reason", "Menunggu gambar..."))
         if self.live.isChecked() and self.worker.running and not (self.hotkeys and self.hotkeys.ready):
             self.worker.command("stop")
             self.reason.setText("Hotkey darurat tidak aktif; input dihentikan.")
@@ -678,6 +792,9 @@ class MainWindow(QMainWindow):
         if self.guide is not None:
             self.guide.reject()
         self.worker.close()
+        if self.preparation is not None:
+            self.preparation.reject()
+            self.preparation = None
         if self.hotkeys:
             self.hotkeys.close()
         self.worker.join(timeout=1)

@@ -80,3 +80,38 @@ def test_live_refuses_offline_image(tmp_path):
     finally:
         worker.close()
         worker.join(3)
+
+
+def test_snapshot_error_is_correlated_and_preserves_reason(tmp_path):
+    worker = Worker(Store(tmp_path), None)
+    try:
+        request = worker.command("snapshot", RunSpec(Profile()))
+        worker._apply_command(*worker.commands.get_nowait())
+        worker._failure(RuntimeError("test driver unavailable"))
+        snap, _ = worker.read()
+        assert snap["capture_epoch"] == request
+        assert "test driver unavailable" in snap["capture_error"]
+        assert not worker.running and worker.engine is None
+    finally:
+        worker.handler.close()
+
+
+def test_focus_wait_is_bounded_but_not_fixed_four_second_deadline(tmp_path):
+    from autofarmseal.windows import FocusError
+    worker = Worker(Store(tmp_path), None)
+    try:
+        request = worker.command("snapshot", RunSpec(Profile()))
+        worker._apply_command(*worker.commands.get_nowait())
+        def not_focused():
+            raise FocusError("waiting for user")
+        worker._capture = not_focused
+        worker.capture_at = time.monotonic()-1
+        worker._step(request)
+        assert worker.latest["capture_epoch"] == request
+        assert worker.latest["state"] == "Menunggu game aktif"
+        worker.capture_deadline = time.monotonic()-1
+        import pytest
+        with pytest.raises(RuntimeError, match="15 detik"):
+            worker._step(request)
+    finally:
+        worker.handler.close()

@@ -14,7 +14,7 @@ import cv2
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from .dialogs import Canvas, load_image
@@ -78,6 +78,8 @@ def hint_for(profile: Profile) -> str:
 
 class SetupGuide(QDialog):
     capture_requested = Signal()
+    capture_cancelled = Signal()
+    choose_window_requested = Signal()
 
     def __init__(self, profile, store, *, mode="monster", can_capture=False, parent=None):
         super().__init__(parent)
@@ -91,6 +93,8 @@ class SetupGuide(QDialog):
         self.chosen = None
         self.sampled_ok = False
         self.capture_pending = False
+        self.can_capture = can_capture
+        self.test_started = 0.0
         self.test_thread = None
         self.test_cancel = threading.Event()
         self.results = queue.Queue(maxsize=1)
@@ -129,14 +133,24 @@ class SetupGuide(QDialog):
         root.addLayout(self.name_row)
         self.source_row = QHBoxLayout()
         self.capture_button = QPushButton("Ambil gambar dari game")
-        self.capture_button.setEnabled(can_capture)
+        self.capture_button.setEnabled(True)
         self.capture_button.setToolTip("Pilih jendela game di menu utama terlebih dahulu.")
-        self.capture_button.clicked.connect(self.capture_requested.emit)
+        self.capture_button.clicked.connect(self.request_capture)
         self.source_row.addWidget(self.capture_button)
         self.file_button = QPushButton("Pakai gambar yang sudah ada")
         self.file_button.clicked.connect(self.open_file)
         self.source_row.addWidget(self.file_button)
         root.addLayout(self.source_row)
+        self.window_hint = QLabel("Game dipilih dari menu utama." if can_capture
+                                  else "Belum ada game dipilih. Pilih game di sini atau buka screenshot.")
+        self.window_hint.setWordWrap(True)
+        root.addWidget(self.window_hint)
+        self.choose_window_button = QPushButton("Pilih / ganti jendela game...")
+        self.choose_window_button.clicked.connect(lambda _checked=False: self.choose_window_requested.emit())
+        root.addWidget(self.choose_window_button)
+        self.abort_capture_button = QPushButton("Batalkan pengambilan gambar")
+        self.abort_capture_button.clicked.connect(lambda _checked=False: self.capture_cancelled.emit())
+        outer.addWidget(self.abort_capture_button)
         self.canvas = Canvas()
         self.canvas.setMinimumSize(440, 240)
         self.canvas.selected.connect(self.select)
@@ -144,16 +158,23 @@ class SetupGuide(QDialog):
         root.addWidget(self.canvas, 1)
         self.feedback = QLabel("Belum ada gambar. Pilih salah satu tombol di atas.")
         self.feedback.setWordWrap(True)
-        root.addWidget(self.feedback)
+        outer.addWidget(self.feedback)
         self.test_button = QPushButton("Coba cari monster (tanpa klik)")
         self.test_button.clicked.connect(self.run_test)
         root.addWidget(self.test_button)
         self.other_button = QPushButton("Coba pada gambar lain...")
         self.other_button.clicked.connect(lambda: self.open_file(test_only=True))
         root.addWidget(self.other_button)
-        self.ack = QCheckBox("Saya sudah melihat hasilnya. Ini belum izin untuk menyerang otomatis.")
+        self.ack = QCheckBox("Hasil sudah saya periksa (belum mengizinkan serangan otomatis).")
         self.ack.toggled.connect(self.update_buttons)
-        root.addWidget(self.ack)
+        outer.addWidget(self.ack)
+        self.requirement = QLabel()
+        self.requirement.setWordWrap(True)
+        self.requirement.setObjectName("status")
+        outer.addWidget(self.requirement)
+        self.draft_button = QPushButton("Simpan contoh dulu (belum teruji)")
+        self.draft_button.clicked.connect(self.save_draft)
+        outer.addWidget(self.draft_button)
         row = QHBoxLayout()
         self.cancel_button = QPushButton("Batal, tidak menyimpan")
         self.cancel_button.clicked.connect(self.reject)
@@ -185,6 +206,9 @@ class SetupGuide(QDialog):
         self.name.setVisible(step == "source" and self.mode == "monster")
         self.capture_button.setVisible(step == "source")
         self.file_button.setVisible(step == "source")
+        self.window_hint.setVisible(step == "source")
+        self.choose_window_button.setVisible(step == "source")
+        self.draft_button.setVisible(step == "review" and self.mode == "monster")
         self.test_button.setVisible(step == "review" and self.mode == "monster")
         self.other_button.setVisible(step == "review" and self.mode == "monster")
         self.ack.setVisible(step == "review")
@@ -236,6 +260,34 @@ class SetupGuide(QDialog):
             return self.ack.isChecked() and (self.mode != "monster" or self.test_done)
         return False
 
+    def request_capture(self, _checked=False):
+        if not self.capture_pending and not self.testing and not self.closed:
+            self.capture_requested.emit()
+
+    def blocking_reason(self):
+        if self.capture_pending:
+            return "Sedang mengambil gambar. Tunggu hasil atau tekan Batalkan pengambilan gambar."
+        if self.testing:
+            return "Sedang menguji gambar; tombol akan aktif setelah hasil muncul."
+        if self.canvas.frame is None:
+            return "Agar Lanjut aktif: ambil gambar game atau pilih file screenshot dahulu."
+        if self.step == "source" and not self.name.text().strip():
+            return "Agar Lanjut aktif: isi nama monster di atas."
+        if self.step == "world" and "world" not in self.p.regions:
+            return "Agar Lanjut aktif: tekan-tahan mouse kiri, tarik kotak area dunia, lalu lepaskan."
+        if self.step in {"monster", "combat", "defeat"} and self.template_path is None:
+            return "Agar Lanjut aktif: tarik kotak mengelilingi contoh pada gambar. Klik biasa belum memilih kotak."
+        if self.step in {"hp", "ap"} and self.step not in self.p.regions:
+            return "Agar Lanjut aktif: tarik kotak sepanjang bagian dalam batang."
+        if self.step.startswith("sample:") and not self.sampled_ok:
+            return "Agar Lanjut aktif: klik satu titik isi batang yang berwarna, di dalam kotak."
+        if self.step == "review":
+            if self.mode == "monster" and not self.test_done:
+                return "Jalankan Coba cari monster dahulu, atau Simpan contoh dulu untuk melanjutkan lain waktu."
+            if not self.ack.isChecked():
+                return "Periksa hasil, lalu centang Hasil sudah saya periksa tepat di atas tombol ini."
+        return "Siap. Tekan Simpan dan selesai." if self.step == "review" else "Siap. Tekan Lanjut."
+
     def update_buttons(self, *_):
         busy = self.capture_pending or self.testing
         self.next_button.setText("Simpan dan selesai" if self.step == "review" else "Lanjut")
@@ -243,14 +295,24 @@ class SetupGuide(QDialog):
         self.back_button.setEnabled(self.index > 0 and not busy)
         self.test_button.setEnabled(not busy)
         self.other_button.setEnabled(not busy)
+        self.capture_button.setEnabled(not busy)
+        self.file_button.setEnabled(not busy)
+        self.choose_window_button.setEnabled(not busy)
+        self.abort_capture_button.setVisible(self.capture_pending)
+        self.ack.setEnabled(not busy)
+        self.canvas.interactive = not busy and self.step not in {"source", "review"}
+        self.draft_button.setEnabled(not busy and self.template_path is not None)
+        self.requirement.setText(self.blocking_reason())
+        self.next_button.setToolTip(self.blocking_reason())
 
     def set_frame(self, frame, *, test_only=False):
         size = (frame.shape[1], frame.shape[0])
         if size[0] < 100 or size[1] < 100 or max(size) > 7680 or size[1] > 4320:
             raise ValueError("Pakai gambar jendela game yang lengkap, bukan potongan kecil.")
         if self.p.width and size != (self.p.width, self.p.height):
-            raise ValueError("Ukuran gambar berbeda dari profil. Jangan ubah ukuran game; "
-                             "buat profil baru untuk resolusi lain. Pengaturan lama tidak dihapus.")
+            raise ValueError(f"Ukuran gambar berbeda: {size[0]} x {size[1]}; profil memakai "
+                             f"{self.p.width} x {self.p.height}. Gunakan gambar tanpa bingkai judul, "
+                             "atau setujui pengaturan ulang ukuran. Profil tersimpan belum berubah.")
         if float(frame[::8, ::8].std()) < 2:
             raise ValueError("Gambar tampak kosong. Pastikan game terlihat, lalu ambil ulang.")
         self.p.width, self.p.height = size
@@ -261,14 +323,41 @@ class SetupGuide(QDialog):
         if test_only:
             self.run_test()
 
+    def receive_frame(self, frame, *, test_only=False):
+        """An explicit, transactional reset instead of trapping an old-size profile."""
+        size = (frame.shape[1], frame.shape[0])
+        if self.p.width and size != (self.p.width, self.p.height):
+            answer = QMessageBox.question(self, "Ukuran gambar berubah",
+                f"Gambar baru {size[0]} x {size[1]}, profil lama {self.p.width} x {self.p.height}. "
+                "Atur ulang contoh dan area untuk ukuran baru? Profil di disk tidak berubah "
+                "sampai disimpan; Batal tetap mempertahankan profil lama.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                self.feedback.setText("Gambar belum dipakai: ukuran berbeda. Ambil ukuran lama atau setujui atur ulang.")
+                return False
+            self.p.regions.clear()
+            self.p.exclusions.clear()
+            self.p.templates = {"monster": [], "combat": [], "defeat": []}
+            self.p.width = self.p.height = 0
+            self.p.input_verified = False
+            self.pending.clear()
+            self.template_path = self.chosen = None
+            self.sampled_ok = False
+            self.index = 0
+            test_only = False
+        self.set_frame(frame, test_only=test_only)
+        return True
+
     def open_file(self, _checked=False, *, test_only=False):
         path, _ = QFileDialog.getOpenFileName(self, "Pilih gambar game tanpa bingkai judul", "",
                                             "Gambar (*.png *.jpg *.jpeg *.bmp)")
         if path:
             try:
-                self.set_frame(load_image(path), test_only=test_only)
+                self.receive_frame(load_image(path), test_only=test_only)
             except (ValueError, OSError) as exc:
                 self.feedback.setText(str(exc))
+                self.update_buttons()
 
     def select(self, rect: Rect):
         if self.canvas.frame is None or not rect.valid_in((self.p.width, self.p.height)):
@@ -281,6 +370,10 @@ class SetupGuide(QDialog):
             if step in {"world", "hp", "ap"}:
                 if step == "world" and min(rect.w, rect.h) < 30:
                     raise ValueError("Area pencarian terlalu kecil. Kotaki sebagian dunia game, bukan satu titik.")
+                if step == "world" and self.template_path:
+                    self.p.templates["monster"].remove(self.template_path)
+                    self.pending.pop(self.template_path, None)
+                    self.template_path = self.chosen = None
                 self.p.regions[step] = rect
                 self.sampled_ok = False
                 self.canvas.boxes = [(rect, "Area dipilih")]
@@ -344,7 +437,8 @@ class SetupGuide(QDialog):
             self.render()
 
     def advance(self):
-        if not self.step_ready() or self.capture_pending:
+        if not self.step_ready() or self.capture_pending or self.testing:
+            self.update_buttons()
             return
         if self.step == "review":
             self.accept()
@@ -359,6 +453,7 @@ class SetupGuide(QDialog):
             return
         self.test_done = False
         self.testing = True
+        self.test_started = time.monotonic()
         self.ack.setChecked(False)
         profile, frame, pending = self.p.clone(), self.canvas.frame.copy(), dict(self.pending)
         self.feedback.setText("Sedang mencari pada gambar. Tidak ada input ke game...")
@@ -382,6 +477,13 @@ class SetupGuide(QDialog):
         try:
             result = self.results.get_nowait()
         except queue.Empty:
+            if self.testing and time.monotonic() - self.test_started > 15:
+                self.test_cancel.set()
+                self.testing = False
+                self.test_timer.stop()
+                self.feedback.setText("Pengujian terlalu lama. Kurangi area pencarian atau simpan contoh dulu. "
+                                      "Tidak ada klik ke game.")
+                self.update_buttons()
             return
         self.test_timer.stop()
         self.testing = False
@@ -405,6 +507,16 @@ class SetupGuide(QDialog):
             return
         if self.test_thread and self.test_thread.is_alive():
             return
+        self.save_profile()
+
+    def save_draft(self, _checked=False):
+        if (self.mode != "monster" or self.step != "review" or not self.template_path
+                or self.testing or self.capture_pending or self.saved):
+            return
+        # Saving reference data is not enabling or verifying game input.
+        self.save_profile()
+
+    def save_profile(self):
         candidate = self.p.clone()
         if self.mode == "monster":
             candidate.name = self.name.text().strip()

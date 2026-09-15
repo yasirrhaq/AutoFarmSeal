@@ -19,6 +19,11 @@ class SafetyError(RuntimeError):
     pass
 
 
+class FocusError(SafetyError):
+    """Recoverable while waiting for an explicitly requested screenshot."""
+    pass
+
+
 @dataclass(frozen=True)
 class Window:
     hwnd: int
@@ -40,14 +45,20 @@ class Native:
     def __init__(self):
         if sys.platform != "win32":
             raise SafetyError("Kontrol game hanya didukung di Windows. Gunakan mode gambar offline.")
-        import pyautogui
         import win32api
         import win32gui
         import win32process
         self.gui, self.api, self.proc = win32gui, win32api, win32process
-        self.pg = pyautogui
-        self.pg.FAILSAFE = True
-        self.pg.PAUSE = 0.02
+        self.pg = None
+        self.input_error = ""
+        try:
+            import pyautogui
+            self.pg = pyautogui
+            self.pg.FAILSAFE = True
+            self.pg.PAUSE = 0.02
+        except Exception as exc:
+            # Screen observation remains available even if input cannot initialize.
+            self.input_error = f"{type(exc).__name__}: {exc}"
         self.blocked = threading.Event()
         self.blocked.set()
         self.lock = threading.RLock()
@@ -80,6 +91,36 @@ class Native:
     def is_foreground(self, window: Window) -> bool:
         return self.gui.GetForegroundWindow() == window.hwnd
 
+    @property
+    def input_available(self) -> bool:
+        return self.pg is not None
+
+    def request_foreground(self, expected: Window) -> bool:
+        """Best effort after a user capture click. Never simulate keys/force locks."""
+        actual = self.window(expected.hwnd)
+        if actual.pid != expected.pid:
+            raise SafetyError("Identitas game berubah. Pilih game kembali.")
+        try:
+            self.gui.SetForegroundWindow(expected.hwnd)
+        except self.gui.error:
+            return False  # OS may deny; wait for the user to select the game.
+        return self.is_foreground(actual)
+
+    def check_capture_window(self, expected: Window) -> Window:
+        actual = self.window(expected.hwnd)
+        if actual.pid != expected.pid:
+            raise SafetyError("Identitas proses berubah. Pilih game kembali.")
+        if not self.is_foreground(actual):
+            raise FocusError("Klik jendela game yang dipilih; aplikasi masih menunggu game aktif.")
+        # Screenshot-only operations can use secondary monitors. Live guards below
+        # deliberately retain the original primary-monitor requirement.
+        desktop = Rect(self.api.GetSystemMetrics(76), self.api.GetSystemMetrics(77),
+                       self.api.GetSystemMetrics(78), self.api.GetSystemMetrics(79))
+        r = actual.rect
+        if not (desktop.contains(r.x, r.y) and desktop.contains(r.right-1, r.bottom-1)):
+            raise SafetyError("Jendela game sebagian di luar layar. Pindahkan agar terlihat seluruhnya.")
+        return actual
+
     def check_window(self, expected: Window) -> Window:
         actual = self.window(expected.hwnd)
         if actual.pid != expected.pid:
@@ -92,6 +133,8 @@ class Native:
 
     def guard(self, expected: Window, captured_at: float, profile: Profile,
               point: tuple[int, int] | None = None):
+        if self.pg is None:
+            raise SafetyError("Input Windows belum tersedia: " + self.input_error)
         if self.blocked.is_set():
             raise SafetyError("Input diblokir oleh jeda/berhenti.")
         if not 0 <= time.monotonic() - captured_at <= profile.max_frame_age:
@@ -111,6 +154,8 @@ class Native:
 
     def release_all(self):
         with self.lock:
+            if self.pg is None:
+                return
             # This bypass is ONLY for releasing our held inputs after a corner
             # fail-safe. All input-down operations keep FAILSAFE enabled.
             old = self.pg.FAILSAFE
@@ -133,7 +178,7 @@ class Native:
             try:
                 if action.kind == "attack":
                     if action.point is None:
-                        raise SafetyError("Koordinat target kosong.")
+                        raise SafetyError("Koordinatat target kosong.")
                     x, y = action.point
                     self.pg.moveTo(expected.rect.x+x, expected.rect.y+y, duration=0)
                     if p.ctrl_click:

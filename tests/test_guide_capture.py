@@ -38,7 +38,7 @@ def test_cancelled_capture_does_not_load_stale_image(qtbot, tmp_path, monkeypatc
     window.worker.command("stop")
     window.capture_wait = ("guide", old_epoch, time.monotonic())
     frame = np.random.default_rng(21).integers(0, 255, (250, 500, 3), dtype=np.uint8)
-    monkeypatch.setattr(window.worker, "read", lambda: ({"state": "Capture selesai", "captured": frame}, []))
+    monkeypatch.setattr(window.worker, "read", lambda: ({"state": "Capture selesai", "captured": frame, "capture_epoch": window.capture_wait[1]}, []))
     window.poll()
     assert window.capture_wait is None
     assert not guide.capture_pending
@@ -62,7 +62,7 @@ def test_successful_capture_returns_to_current_guide(qtbot, tmp_path, monkeypatc
     guide.capture_pending = True
     window.capture_wait = ("guide", window.worker.epoch, time.monotonic())
     frame = np.random.default_rng(22).integers(0, 255, (250, 500, 3), dtype=np.uint8)
-    monkeypatch.setattr(window.worker, "read", lambda: ({"state": "Capture selesai", "captured": frame}, []))
+    monkeypatch.setattr(window.worker, "read", lambda: ({"state": "Capture selesai", "captured": frame, "capture_epoch": window.capture_wait[1]}, []))
     window.poll()
     assert window.capture_wait is None
     assert not guide.capture_pending

@@ -75,7 +75,7 @@ def test_beginner_screen_hides_technical_controls(qtbot, tmp_path):
     window.show()
     assert window.advanced_panel.isHidden()
     assert window.guide_button.isVisible()
-    assert not window.observe_button.isEnabled()
+    assert window.observe_button.isEnabled()
     assert not window.live.isChecked()
     window.advanced_button.setChecked(True)
     assert not window.advanced_panel.isHidden()

@@ -23,7 +23,7 @@ from .engine import Engine, State
 from .model import Profile
 from .storage import Store
 from .vision import Detector
-from .windows import Native, SafetyError, Window
+from .windows import FocusError, Native, SafetyError, Window
 
 
 @dataclass
@@ -53,6 +53,8 @@ class Worker(threading.Thread):
         self.engine: Engine | None = None
         self.running = False
         self.capture_at: float | None = None
+        self.capture_deadline = 0.0
+        self.capture_epoch: int | None = None
         self.observe_until = 0.0
         self.sct = None
         self.last_frame = None
@@ -86,6 +88,7 @@ class Worker(threading.Thread):
                     break
             self.commands.put_nowait((epoch, kind, spec))
         self.wake.set()
+        return epoch
 
     def read(self) -> tuple[dict, list[str]]:
         with self.lock:
@@ -108,7 +111,10 @@ class Worker(threading.Thread):
     def _capture(self) -> tuple[np.ndarray, Window, float]:
         if not self.native or not self.spec or not self.spec.window:
             raise SafetyError("Pilih window game Windows terlebih dahulu.")
-        window = self.native.check_window(self.spec.window)
+        if self.capture_epoch is not None or not self.spec.live:
+            window = self.native.check_capture_window(self.spec.window)
+        else:
+            window = self.native.check_window(self.spec.window)
         if self.sct is None:
             import mss
             self.sct = mss.mss()
@@ -122,6 +128,7 @@ class Worker(threading.Thread):
             return
         now = time.monotonic()
         self.capture_at = None
+        self.capture_epoch = None
         if kind in {"pause", "stop"}:
             self.running = False
             if self.engine:
@@ -140,8 +147,13 @@ class Worker(threading.Thread):
         if kind == "snapshot":
             self.spec = spec
             self.running = False
-            self.capture_at = now + 4
-            self.publish(state="Capture dalam 4 detik", reason="Aktifkan game sekarang.")
+            self.engine = None
+            self.detector = None
+            self.capture_epoch = epoch
+            self.capture_at = now + 1.0
+            self.capture_deadline = now + 15.0
+            self.publish(state="Menunggu gambar", capture_epoch=epoch,
+                         reason="Klik game yang dipilih. Menunggu hingga 15 detik; tidak ada input game.")
             return
         errors = spec.profile.validate(calibrated=True, live=spec.live)
         if errors:
@@ -172,7 +184,13 @@ class Worker(threading.Thread):
             self.native.halt()
         self.running = False
         self.capture_at = None
-        message = str(exc) or type(exc).__name__
+        message = f"{type(exc).__name__}: {exc}"
+        if self.capture_epoch is not None:
+            request_id, self.capture_epoch = self.capture_epoch, None
+            self.publish(state="Capture gagal", reason=message,
+                         capture_epoch=request_id, capture_error=message)
+            self.event("Gagal mengambil gambar: " + message, level="warning")
+            return
         now = time.monotonic()
         if self.engine:
             self.engine.pause(now, message)
@@ -194,11 +212,25 @@ class Worker(threading.Thread):
         now = time.monotonic()
         if self.capture_at is not None:
             if now >= self.capture_at:
-                image, _, _ = self._capture()
+                try:
+                    image, window, captured_at = self._capture()
+                    # Do not accept an image taken while focus or client geometry changed.
+                    after = self.native.check_capture_window(window)
+                    if after.rect != window.rect:
+                        raise SafetyError("Jendela berubah saat gambar diambil. Coba lagi.")
+                except FocusError:
+                    if now >= self.capture_deadline:
+                        raise SafetyError("Game belum aktif setelah 15 detik. Pilih game yang benar, "
+                                          "tekan Ambil gambar, lalu klik game. Alternatif: Pakai gambar yang sudah ada.")
+                    self.publish(state="Menunggu game aktif", capture_epoch=epoch,
+                                 reason=f"Klik game yang dipilih. Sisa {max(1, int(self.capture_deadline-now))} detik.")
+                    return
                 self.capture_at = None
+                self.capture_epoch = None
                 if epoch == self.epoch:
-                    self.publish(state="Capture selesai", reason="Kalibrasikan gambar client game.",
-                                 captured=image)
+                    self.publish(state="Capture selesai", reason="Gambar berhasil diambil.",
+                                 captured=image, capture_epoch=epoch, captured_at=captured_at,
+                                 captured_window=window.title)
             return
         if not self.running or spec is None or detector is None:
             return
