@@ -5,6 +5,7 @@ geometry, foreground, and capture age are checked again before each input down.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -57,9 +58,9 @@ class Native:
         if not self.gui.IsWindow(hwnd) or not self.gui.IsWindowVisible(hwnd) or self.gui.IsIconic(hwnd):
             raise SafetyError("Window game ditutup, disembunyikan, atau diminimalkan.")
         _, pid = self.proc.GetWindowThreadProcessId(hwnd)
-        l, t, r, b = self.gui.GetClientRect(hwnd)
-        x, y = self.gui.ClientToScreen(hwnd, (l, t))
-        rect = Rect(x, y, r-l, b-t)
+        left, top, right, bottom = self.gui.GetClientRect(hwnd)
+        x, y = self.gui.ClientToScreen(hwnd, (left, top))
+        rect = Rect(x, y, right-left, bottom-top)
         if rect.w < 100 or rect.h < 100:
             raise SafetyError("Area client terlalu kecil.")
         return Window(hwnd, pid, self.gui.GetWindowText(hwnd), rect)
@@ -69,7 +70,7 @@ class Native:
         def visit(hwnd, _):
             try:
                 w = self.window(hwnd)
-                if w.title and w.pid != __import__("os").getpid():
+                if w.title and w.pid != os.getpid():
                     result.append(w)
             except (SafetyError, self.gui.error):
                 pass
