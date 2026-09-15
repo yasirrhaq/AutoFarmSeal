@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import QObject, QPoint, QTimer, Qt
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QCheckBox
 
 from .dialogs import Canvas
 from .ui import MainWindow
@@ -50,7 +51,12 @@ class CaptureScenario(QObject):
 
     @staticmethod
     def click(widget):
-        QTest.mouseClick(widget, Qt.MouseButton.LeftButton)
+        # QCheckBox stretches across the layout but only its indicator/text is clickable.
+        # Click the actual indicator, not empty row space (font width differs offscreen).
+        if isinstance(widget, QCheckBox):
+            QTest.mouseClick(widget, Qt.MouseButton.LeftButton, pos=QPoint(8, widget.height()//2))
+        else:
+            QTest.mouseClick(widget, Qt.MouseButton.LeftButton)
 
     @staticmethod
     def drag(canvas, first, last):
@@ -110,7 +116,8 @@ class CaptureScenario(QObject):
                 self.report.parent.mkdir(parents=True, exist_ok=True)
                 guide.grab().save(str(self.report.with_suffix(".guide.png")))
                 self.click(guide.ack)
-                assert guide.next_button.isEnabled()
+                assert guide.ack.isChecked(), "Confirmation indicator did not toggle"
+                assert guide.next_button.isEnabled(), guide.requirement.text()
                 self.click(guide.next_button)
                 self.stage = 4
             elif self.stage == 4:
