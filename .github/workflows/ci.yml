@@ -17,6 +17,20 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
+      - name: Source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoFarmSeal-source
+          path: |
+            src/
+            tests/
+            scripts/
+            docs/
+            *.md
+            pyproject.toml
+            AutoFarmSeal.spec
+          retention-days: 14
+          if-no-files-found: error
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
