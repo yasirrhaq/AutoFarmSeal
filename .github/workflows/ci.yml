@@ -28,16 +28,26 @@ jobs:
         run: python -m ruff check .
       - name: Tests (no live game inputs)
         run: python -m pytest -q
+      - name: Native Windows font check
+        env:
+          QT_QPA_PLATFORM: windows
+        run: >-
+          python -c "from PySide6.QtWidgets import QApplication; from PySide6.QtGui import QFont, QFontMetrics; app=QApplication([]); assert QFontMetrics(QFont('Segoe UI', 10)).inFontUcs4(65), 'Windows UI font unavailable'"
       - name: UI smoke test
+        env:
+          QT_QPA_PLATFORM: windows
         run: python -m autofarmseal --smoke-test --data-dir .smoke-data --screenshot ui-smoke.png
       - name: Freeze Windows app
         run: python -m PyInstaller --noconfirm --clean AutoFarmSeal.spec
       - name: Packaged smoke test
+        env:
+          QT_QPA_PLATFORM: windows
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath .\dist\AutoFarmSeal\AutoFarmSeal.exe -ArgumentList '--smoke-test','--data-dir','.packaged-smoke' -PassThru
+          $p = Start-Process -FilePath .\dist\AutoFarmSeal\AutoFarmSeal.exe -ArgumentList '--smoke-test','--data-dir','.packaged-smoke','--screenshot','packaged-ui.png' -PassThru
           if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id; throw 'Packaged smoke test timed out' }
           if ($p.ExitCode -ne 0) { throw "Packaged smoke test failed: $($p.ExitCode)" }
+          if (-not (Test-Path 'packaged-ui.png')) { throw 'Packaged UI screenshot was not created' }
       - name: Dependency manifest
         run: python -m pip freeze > dist/AutoFarmSeal/build-dependencies.txt
       - uses: actions/upload-artifact@v4
@@ -45,10 +55,13 @@ jobs:
           name: AutoFarmSeal-Windows-x64
           path: dist/AutoFarmSeal/
           retention-days: 14
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ui-smoke
-          path: ui-smoke.png
+          path: |
+            ui-smoke.png
+            packaged-ui.png
           if-no-files-found: ignore
           retention-days: 14
