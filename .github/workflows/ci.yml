@@ -1,0 +1,54 @@
+name: Test and build Windows
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python -m pip install -e ".[dev,build]"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Tests (no live game inputs)
+        run: python -m pytest -q
+      - name: UI smoke test
+        run: python -m autofarmseal --smoke-test --data-dir .smoke-data --screenshot ui-smoke.png
+      - name: Freeze Windows app
+        run: python -m PyInstaller --noconfirm --clean AutoFarmSeal.spec
+      - name: Packaged smoke test
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath .\dist\AutoFarmSeal\AutoFarmSeal.exe -ArgumentList '--smoke-test','--data-dir','.packaged-smoke' -PassThru
+          if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id; throw 'Packaged smoke test timed out' }
+          if ($p.ExitCode -ne 0) { throw "Packaged smoke test failed: $($p.ExitCode)" }
+      - name: Dependency manifest
+        run: python -m pip freeze > dist/AutoFarmSeal/build-dependencies.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoFarmSeal-Windows-x64
+          path: dist/AutoFarmSeal/
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-smoke
+          path: ui-smoke.png
+          if-no-files-found: ignore
+          retention-days: 14
