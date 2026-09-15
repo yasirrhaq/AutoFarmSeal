@@ -18,8 +18,11 @@ def main() -> int:
     parser.add_argument("--data-dir", type=Path, help="Optional independent local data directory")
     parser.add_argument("--self-check", action="store_true", help="Read local profiles; never capture or send input")
     parser.add_argument("--smoke-test", action="store_true", help="Open/close UI without native adapters or input")
+    parser.add_argument("--guide-smoke", action="store_true", help="Preview setup UI; requires smoke-test")
     parser.add_argument("--screenshot", type=Path, help="UI screenshot for smoke test only")
     args = parser.parse_args()
+    if args.guide_smoke and not args.smoke_test:
+        parser.error("--guide-smoke requires --smoke-test")
     if args.screenshot and not args.smoke_test:
         parser.error("--screenshot requires --smoke-test")
     store = Store(args.data_dir)
@@ -49,10 +52,15 @@ def main() -> int:
     sys.excepthook = handle_error
     window.show()
     if args.smoke_test:
+        if args.guide_smoke:
+            from .guide import SetupGuide
+            window.guide = SetupGuide(window.current(), store, parent=window)
+            window.guide.show()
         def finish():
             if args.screenshot:
                 args.screenshot.parent.mkdir(parents=True, exist_ok=True)
-                window.grab().save(str(args.screenshot))
+                target = window.guide if args.guide_smoke else window
+                target.grab().save(str(args.screenshot))
             window.close()
         QTimer.singleShot(700, finish)
     return app.exec()

@@ -1,28 +1,34 @@
 # AutoFarmSeal
 
-A compact **Windows trainer-style desktop application** for a supervised computer-vision college project. Python + PySide6, packaged as a one-folder `.exe` using PyInstaller.
+**v0.2.0 — panduan pengaturan mudah.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
 
-**Status: v0.1.0 research prototype, not a verified unattended Seal bot.** The repository contains application code and automated tests. Compatibility with your client, monster recognition, resource calibration, completion indicators, pickup bindings, and in-game performance still require supervised Windows testing.
+## Mulai tanpa mengedit kode
 
-The program observes visible screen pixels and sends bounded normal mouse/keyboard input. It does **not** access game memory, inject DLLs, manipulate packets, hook Direct3D, bypass protections, or provide game-stat cheats. Use only in an offline or explicitly permitted environment. A checkbox is not a substitute for the server owner's permission.
+Ekstrak seluruh ZIP, lalu buka `AutoFarmSeal.exe`. Jangan memindahkan `.exe` sendirian: folder `_internal` harus tetap di sampingnya. Tidak perlu memasang Python untuk paket Windows.
 
-## What is included
+1. Pilih game pada daftar, lalu tekan **1. Mulai pengaturan mudah**. Ikuti empat langkah: ambil gambar, kotaki area pencarian, kotaki satu monster, lalu coba hasilnya. Tidak perlu mengisi koordinat, angka warna HSV atau skor deteksi.
+2. Tekan **2. Coba deteksi (tidak menyerang)** untuk melihat hasil pada satu gambar terbaru. Saat aplikasi mengecil, aktifkan game dalam empat detik; hasil otomatis muncul kembali. Mode ini tidak mengirim input game.
+3. **3. Siapkan farming** menunjukkan kebutuhan berikutnya satu per satu. Ada panduan posisi/warna darah, tanda saat menyerang dan tanda saat monster kalah. Tombol potion dan opsi teknis ada di **Tampilkan potion dan pengaturan lanjutan**.
 
-- Compact dark trainer UI: window selection, monster profile, HP/AP toggles and thresholds, pickup binding, start/pause/stop, status, and local log.
-- Create, edit, duplicate, and delete profiles without editing source code. JSON profiles and PNG templates live outside the executable.
-- Screenshot calibration: drag world/HP/AP/target-HP/exclusion regions, crop multiple monster templates, and click a bar's fill to sample HSV color.
-- Open screenshot files for offline observation, or capture the foreground game client after a four-second countdown.
-- Multi-scale OpenCV template matching, bounded candidates, exclusion regions, duplicate suppression, and coordinate conversion back to client pixels.
-- Default **observation-only** mode. It creates no action plan and sends no game input.
-- Explicitly gated input mode: select, verify engagement, monitor combat, heal, verify completion, request bounded pickup, repeat.
-- F8 start/resume, F9 pause, F10 stop; focus/identity/geometry/fresh-frame guards; limited retries, timeouts, and session limits.
-- Rotating local JSONL logs; optional capped failure screenshots; tests, PRD, TRD, Windows build script and CI workflow.
+Selesai mengikuti panduan tidak otomatis mengizinkan klik atau membuktikan akurasi. Jangan membuat tanda pertarungan sembarang untuk melewati syarat. Bila belum tahu indikator yang cocok, tetap gunakan uji deteksi dan minta bantuan dengan rekaman satu pertarungan.
 
-**There are no bundled game screenshots, trained weights, or pre-calibrated monster profiles.** A name is not a classifier: add reference images from your own permitted gameplay. Templates may fail with changing camera angle, pose, scale, occlusion, or similar-looking monsters.
+**[Panduan lengkap bahasa Indonesia](docs/MULAI_DI_SINI.md)**. Profil v0.1 tetap terbaca; jangan menghapus folder data saat memperbarui aplikasi.
 
-## Run from source on Windows
+## What is implemented
 
-Install Python **3.12 x64**. Clone the implementation branch while the initial PR is open:
+Compact trainer UI, beginner setup and separate advanced editor; local profile CRUD; screenshot region selection and PNG templates; multi-scale OpenCV matching; calibrated HP/AP estimates; explicit input-free observation; guarded select/engage/combat/loot state machine; potion rules; bounded pickup requests; F8 start/resume, F9 pause, F10 stop; fresh-frame/window/foreground/identity/geometry guards; rotating logs; optional capped failure screenshots.
+
+Source and packaged Windows smoke tests check startup/shutdown, not a real game. **Client capture/input, monster recognition, HP/AP readings, valid engagement/completion signals, actual pickup binding and game FPS impact still need supervised testing.** No pretrained model, client-calibrated profile or user gameplay screenshot is bundled. Template appearance can fail with changing camera, scale, pose, occlusion or similar monsters.
+
+Default is observation without clicks. Live input requires verified bindings/calibration, explicit opt-in, an environment permitting automation, working hotkeys and a visible game wholly on the primary monitor. No background/minimized gameplay or multi-client operation. A missing monster is not proof of defeat; a pickup key is not proof an item was acquired.
+
+**Stop inhibits this application's future inputs and releases held inputs. It cannot guarantee cancellation of game-native auto-attack already activated.** Cancel that in the game manually as necessary. Do not use the keyboard/mouse for unrelated activities during a live session.
+
+The program observes screen pixels and sends ordinary bounded mouse/keyboard actions. No memory access, DLL injection, packet manipulation, D3D hook, protection bypass or stat cheats. Use only an offline or explicitly permitted environment. Do not disable antivirus/client protection or grant administrator privileges merely to make input work.
+
+## Develop from source
+
+Python 3.12 x64, Windows. While the initial PR remains open:
 
 ```powershell
 git clone --branch feat/windows-trainer-mvp https://github.com/yasirrhaq/AutoFarmSeal.git
@@ -32,54 +38,38 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m autofarmseal
 ```
 
-Or use `scripts/run.ps1` once PowerShell permits locally reviewed scripts. Administrator access is not requested. If the client rejects ordinary synthetic input, stop at observation mode; do not disable the client's protections.
+`scripts/run.ps1` is an alternative after reviewing it and allowing local scripts. Linux/macOS can use the offline screenshot interface and core tests, not live Windows adapters.
 
-Linux/macOS can run the **offline screenshot UI and core tests**, but live adapters are Windows-only. The initial input adapter deliberately supports a visible window wholly on the **primary monitor**, with fixed client size, camera and UI scale. Minimized/background gameplay and multi-client operation are unsupported.
+## Build and test
 
-## First-run workflow
-
-1. Keep **Aktifkan input nyata** unchecked. Choose the game window, then **Capture + Kalibrasi**. The app minimizes; activate the game within four seconds. Alternatively, use **Kalibrasi dari gambar** with a screenshot cropped to the exact client area, not the title bar/desktop.
-2. Drag the permitted world region. Add exclusion regions for chat, minimap, hotbar, dialogs and other UI. Crop representative monster templates (up to 12, at most 5 scales each).
-3. Select the inner HP bar without text/borders; click its colored fill with the HP color sampler. Do the same for AP when needed. Readings are estimates, not game telemetry. A fully empty/unrecognizable bar is UNKNOWN and pauses input.
-4. Collect and calibrate **separate positive visual indicators** for `combat` and `defeat`, from appropriate gameplay moments. Opening another screenshot with the same resolution preserves existing regions. Both indicators are required for live input. Optional target-HP calibration adds a no-progress timeout.
-5. Open **Pratinjau** and run observation. On Windows, the app waits four seconds before capturing so you can activate the game. Return to the app to inspect the last displayed frame; losing game focus pauses capture/input. Avoid putting the preview over the game. For offline testing, with no window selected, Start asks for a screenshot and performs one detection pass.
-6. Test normal input bindings and all indicators manually on your client. In **Pengaturan**, confirm verification only after those tests. Configure potion and pickup keys yourself: **no universal pickup key is assumed**. `Ctrl + click` is an editable starting setting, not a client-compatibility guarantee.
-7. For a supervised input test, explicitly enable input, confirm the environment permits it, start, and return to the game during the four-second countdown. Use F10 immediately if anything is wrong. Work up from one encounter to 5/15/30-minute supervised sessions.
-
-**Do not use a disappearing monster as the defeat template.** The completion detector requires a distinct visible signal, a cleared baseline, and two fresh positive observations during a confirmed encounter. If your client has no reliably detectable completion signal, stay in observation mode until an appropriate verifier is implemented. Merely making calibration boxes is not validation.
-
-**Stop means stop this program's future inputs and release inputs it holds. It cannot guarantee that a game-native auto-attack already started will stop.** Cancel that in the game manually as necessary. Do not use the keyboard/mouse for unrelated activities during a live session.
-
-## Build the Windows `.exe`
-
-On Windows, run `scripts/build.ps1`, or:
+Run `scripts/build.ps1` on Windows, or:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
 .\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean AutoFarmSeal.spec
 ```
 
-Output: `dist/AutoFarmSeal/AutoFarmSeal.exe`. **Distribute the whole `AutoFarmSeal` folder including `_internal`, not just the `.exe`.** User profiles stay in `%LOCALAPPDATA%/AutoFarmSeal`, not in the distribution folder. There is no installer, auto-updater, code-signing certificate, or cloud account in this prototype.
-
-The GitHub Actions workflow runs tests, opens/closes the source UI without input, builds on Windows, and smoke-tests the packaged application. A successful run uploads `AutoFarmSeal-Windows-x64` with a resolved dependency manifest. A workflow definition is not proof of a successful build: inspect that run's actual status. Do not disable antivirus to run an unsigned build; review the source and investigate alerts.
-
-## Developer commands
+Output: `dist/AutoFarmSeal/AutoFarmSeal.exe`; distribute the entire folder. Profiles/templates/logs are in `%LOCALAPPDATA%/AutoFarmSeal`, not the application folder. There is no installer, signing certificate, updater or cloud account.
 
 ```powershell
-python -m pytest -q
-python -m ruff check .
 python -m autofarmseal --self-check
 python -m autofarmseal --smoke-test --data-dir .smoke-data --screenshot ui-smoke.png
+python -m autofarmseal --smoke-test --guide-smoke --data-dir .guide-smoke --screenshot guide-ui.png
 ```
 
-Set `QT_QPA_PLATFORM=offscreen` for headless UI tests. Smoke mode does **not** create native capture/input adapters or register hotkeys. `--self-check` reads configuration only. Set `AUTOFARMSEAL_DATA_DIR`, or pass `--data-dir`, for independent development data.
+`--self-check` only reads profiles. Smoke tests create no native adapters or hotkeys. `--data-dir` or `AUTOFARMSEAL_DATA_DIR` selects independent development data. Headless Qt tests use `QT_QPA_PLATFORM=offscreen`; native Windows smoke tests use `windows` for actual font rendering.
+
+CI runs tests and native UI smoke checks, builds a Windows one-folder package, smoke-tests the `.exe`, and uploads it with a dependency manifest. A matching source snapshot is also retained. Inspect the actual run result before claiming a successful build. Source/widget tests are not game acceptance.
 
 ## Documents
 
-- [Product scope and acceptance criteria](PRD.md)
-- [Architecture, state machine, and performance](TRD.md)
-- [Testing and client validation checklist](docs/TESTING.md)
-- [Third-party software and reference documentation](docs/THIRD_PARTY_NOTICES.md)
+- [Beginner instructions](docs/MULAI_DI_SINI.md)
+- [Usability changes and safeguards in 0.2](docs/USABILITY.md)
+- [Product baseline and acceptance criteria](PRD.md)
+- [Architecture baseline](TRD.md)
+- [Real-client testing checklist](docs/TESTING.md)
+- [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
 
-Out of v0.1: navigation across maps, town visits, potion purchasing, selling inventory, death recovery, complex combos, selective loot, OCR, YOLO/Roboflow integration, a Direct3D overlay, background operation, and multiple clients. No whole-game performance or farming accuracy claims are made before measurement.
+Still out of scope: whole-map navigation, town visits, potion purchasing, inventory selling, death recovery, adaptive combos, selective loot, OCR/YOLO/Roboflow, D3D overlay, background/minimized operation and multiple clients. No unmeasured FPS, accuracy or unattended-farming promises.
