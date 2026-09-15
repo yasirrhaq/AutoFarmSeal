@@ -40,3 +40,30 @@ def test_canvas_letterbox_mapping(qtbot):
     assert canvas.point(QPointF(400, 300)).x() == 400
     assert canvas.point(QPointF(400, 300)).y() == 200
     assert canvas.point(QPointF(5, 5)) is None
+
+
+def test_old_queued_start_cannot_undo_stop(qtbot, tmp_path, monkeypatch):
+    window = MainWindow(Store(tmp_path), smoke=True)
+    qtbot.addWidget(window)
+    starts = []
+    monkeypatch.setattr(window, "start_session", lambda: starts.append("start"))
+    old_epoch = window.worker.epoch
+    window.worker.command("stop")
+    window.hotkey("arm", old_epoch)
+    assert starts == []
+    window.hotkey("arm", window.worker.epoch)
+    assert starts == ["start"]
+    window.close()
+    qtbot.waitUntil(lambda: not window.worker.is_alive())
+
+
+def test_closing_never_accepts_a_start(qtbot, tmp_path, monkeypatch):
+    window = MainWindow(Store(tmp_path), smoke=True)
+    qtbot.addWidget(window)
+    starts = []
+    monkeypatch.setattr(window, "start_session", lambda: starts.append("start"))
+    window.worker.close()
+    window.hotkey("arm", window.worker.epoch)
+    assert starts == []
+    window.close()
+    qtbot.waitUntil(lambda: not window.worker.is_alive())
