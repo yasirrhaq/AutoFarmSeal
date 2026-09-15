@@ -46,7 +46,7 @@ QToolTip { background:#293445; color:#e0e5ed; border:1px solid #52627a; }
 
 
 class Bridge(QObject):
-    command = Signal(str)
+    command = Signal(str, int)
 
 
 class MainWindow(QMainWindow):
@@ -427,11 +427,15 @@ class MainWindow(QMainWindow):
     def global_command(self, kind):
         if kind in {"pause", "stop"}:
             self.worker.command(kind)
-        self.bridge.command.emit(kind)
+        # The listener can enqueue F8 while Qt is busy. A later F10 changes this
+        # epoch immediately; the stale Qt callback must not create a new Start.
+        self.bridge.command.emit(kind, self.worker.epoch)
 
-    @Slot(str)
-    def hotkey(self, kind):
-        if kind == "arm" and QApplication.activeModalWidget() is None:
+    @Slot(str, int)
+    def hotkey(self, kind, epoch):
+        if (kind == "arm" and epoch == self.worker.epoch
+                and not self.worker.closing.is_set()
+                and QApplication.activeModalWidget() is None):
             self.start_session()
 
     def poll(self):
