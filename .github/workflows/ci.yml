@@ -27,6 +27,7 @@ jobs:
             scripts/
             docs/
             *.md
+            build.bat
             pyproject.toml
             AutoFarmSeal.spec
           retention-days: 14
@@ -54,8 +55,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: windows
         run: python -m autofarmseal --data-dir .capture-source --capture-self-test source-capture.json
-      - name: Freeze Windows app
-        run: python -m PyInstaller --noconfirm --clean AutoFarmSeal.spec
+      - name: Build Windows app through build.bat
+        shell: cmd
+        run: call build.bat --no-pause
       - name: Packaged smoke test
         env:
           QT_QPA_PLATFORM: windows
@@ -78,7 +80,7 @@ jobs:
           if (-not $r.success) { throw $r.error }
       - name: Dependency manifest and beginner instructions
         run: |
-          python -m pip freeze > dist/AutoFarmSeal/build-dependencies.txt
+          .\.venv\Scripts\python.exe -m pip freeze > dist/AutoFarmSeal/build-dependencies.txt
           Copy-Item docs/MULAI_DI_SINI.md dist/AutoFarmSeal/MULAI-DI-SINI.txt
       - uses: actions/upload-artifact@v4
         with:
