@@ -29,10 +29,11 @@ def fixture_repo(tmp_path: Path, script: str) -> Path:
 
 
 def run_batch(root: Path, cwd: Path) -> subprocess.CompletedProcess:
-    # Use cmd CALL to support the same quoted-path invocation as a terminal/CI.
+    # Keep CALL and its path separate so subprocess does not backslash-escape
+    # quotes inside a single cmd command string.
     return subprocess.run(
-        [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c",
-         f'call "{root / "build.bat"}" --no-pause'],
+        [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "call",
+         str(root / "build.bat"), "--no-pause"],
         cwd=cwd, capture_output=True, text=True, errors="replace", timeout=30,
         stdin=subprocess.DEVNULL, check=False,
     )
