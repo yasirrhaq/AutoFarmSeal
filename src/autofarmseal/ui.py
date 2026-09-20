@@ -192,6 +192,8 @@ class MainWindow(QMainWindow):
             self.keys[kind] = key
             grid.addWidget(key, row_index, 2)
         advanced_layout.addWidget(feature_box)
+        # Detection milestone: keep combat/potion/input configuration out of the normal UI.
+        feature_box.hide()
         setup = QHBoxLayout()
         for label, callback in (("Capture + Kalibrasi", self.capture),
                                 ("Kalibrasi dari gambar", self.calibration),
@@ -206,8 +208,10 @@ class MainWindow(QMainWindow):
         self.live.setEnabled(False)
         self.live.setToolTip("Kita selesaikan deteksi monster terlebih dahulu. Combat akan dibuka pada tahap berikutnya.")
         advanced_layout.addWidget(self.live)
+        self.live.hide()
         self.permitted = QCheckBox("Saya menguji di lingkungan yang mengizinkan otomatisasi.")
         advanced_layout.addWidget(self.permitted)
+        self.permitted.hide()
         controls = QHBoxLayout()
         self.start_button = QPushButton("Deteksi terus-menerus (tanpa klik)   F8")
         self.start_button.setObjectName("primary")
@@ -732,13 +736,13 @@ class MainWindow(QMainWindow):
     def start_session(self):
         try:
             p = self.collect()
-            is_live = self.live.isChecked()
-            errors = p.validate(calibrated=True, live=is_live)
+            # v0.3.1 milestone: this path is deliberately observation-only.
+            # Combat/loot/potion logic stays in the codebase for later validation,
+            # but cannot be armed from the current UI.
+            is_live = False
+            errors = p.validate(calibrated=True, live=False)
             if errors:
-                if p.validate(calibrated=True):
-                    self.guided_setup()
-                else:
-                    self.farming_setup()
+                self.guided_setup()
                 return
             spec = self.spec(p, live=is_live)
             if not spec.window:
@@ -750,8 +754,6 @@ class MainWindow(QMainWindow):
                     return
                 spec.image = load_image(path)
                 self.open_preview()
-            if is_live and (not spec.permitted or not spec.hotkeys_ready):
-                raise ValueError("Konfirmasi izin lingkungan dan pastikan hotkey global aktif.")
             self.worker.command("arm", spec)
             if spec.window:
                 self.showMinimized()
@@ -814,12 +816,10 @@ class MainWindow(QMainWindow):
         self.status.setText(snap.get("state", "Siap"))
         self.reason.setText(snap.get("reason", ""))
         obs = snap.get("obs")
-        hp = f"{obs.hp:.0%}" if obs and obs.hp is not None else "—"
-        ap = f"{obs.ap:.0%}" if obs and obs.ap is not None else "—"
         seconds = snap.get("seconds", 0)
         timing = f"  |  Deteksi {obs.elapsed_ms:.0f} ms" if obs else ""
-        self.metrics.setText(f"HP {hp}   AP {ap}   {seconds//60:02}:{seconds%60:02}   "
-                             f"Konfirmasi {snap.get('confirmed', 0)}   Tidak diketahui {snap.get('unknown', 0)}{timing}")
+        candidates = len(obs.detections) if obs else 0
+        self.metrics.setText(f"Kandidat {candidates}   Waktu {seconds//60:02}:{seconds%60:02}{timing}")
         for entry in entries:
             self.log_text.appendPlainText(entry)
         if entries:
