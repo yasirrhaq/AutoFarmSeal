@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.guide = None
         self.preparation = None
         self.capture_wait = None
+        self.learning_wait = None
         self.platform_error = ""
         if sys.platform == "win32" and not smoke:
             try:
@@ -134,7 +135,7 @@ class MainWindow(QMainWindow):
         self.guide_hint = QLabel()
         self.guide_hint.setWordWrap(True)
         welcome_layout.addWidget(self.guide_hint)
-        self.guide_button = QPushButton("1. Mulai pengaturan mudah")
+        self.guide_button = QPushButton("1. Ajari monster / Belajar otomatis")
         self.guide_button.setObjectName("primary")
         self.guide_button.clicked.connect(lambda: self.guided_setup())
         welcome_layout.addWidget(self.guide_button)
@@ -146,8 +147,8 @@ class MainWindow(QMainWindow):
         self.prepare_button.clicked.connect(self.farming_setup)
         step_buttons.addWidget(self.prepare_button)
         welcome_layout.addLayout(step_buttons)
-        safe_note = QLabel("Selesaikan satu langkah dulu. Tidak perlu mengisi angka warna, "
-                           "koordinat, atau skor deteksi. Menguji gambar tidak menggerakkan karakter.")
+        safe_note = QLabel("Tandai satu monster sekali. Setelah itu Belajar otomatis dapat mengumpulkan "
+                           "beberapa pose nyata selama 15 detik. Tidak ada klik atau serangan saat belajar.")
         safe_note.setWordWrap(True)
         safe_note.setObjectName("muted")
         welcome_layout.addWidget(safe_note)
@@ -389,6 +390,8 @@ class MainWindow(QMainWindow):
             dialog.capture_requested.connect(self.guide_capture)
             dialog.capture_cancelled.connect(self.cancel_snapshot)
             dialog.choose_window_requested.connect(self.choose_capture_window)
+            dialog.learn_requested.connect(self.guide_learn)
+            dialog.learn_cancelled.connect(self.cancel_learning)
             dialog.finished.connect(lambda result, d=dialog: self.guide_finished(d, result))
             window = self.spec(profile).window
             dialog.window_hint.setText("Game: " + window.title if window else
@@ -404,6 +407,7 @@ class MainWindow(QMainWindow):
             return
         self.worker.command("pause")
         self.capture_wait = None
+        self.learning_wait = None
         self.guide = None
         if result == QDialog.DialogCode.Accepted and dialog.saved:
             index = next(i for i, p in enumerate(self.profiles) if p.id == dialog.p.id)
@@ -418,7 +422,7 @@ class MainWindow(QMainWindow):
 
     def choose_capture_window(self):
         owner = self.guide or self
-        if self.capture_wait:
+        if self.capture_wait or self.learning_wait:
             return False
         if self.native is None:
             message = "Akses window Windows belum tersedia. " + (self.platform_error or
@@ -454,8 +458,8 @@ class MainWindow(QMainWindow):
         return True
 
     def request_snapshot(self, purpose, profile):
-        if self.capture_wait is not None:
-            return  # Double clicks cannot replace/cancel a still-pending request.
+        if self.capture_wait is not None or self.learning_wait is not None:
+            return  # Do not replace a pending capture/learning request.
         spec = self.spec(profile)
         if not self.native or not spec.window:
             raise ValueError("Pilih game dahulu lewat Pilih / ganti jendela game. "
@@ -491,6 +495,72 @@ class MainWindow(QMainWindow):
                 self.guide.feedback.setText(f"Gambar belum diambil: {type(exc).__name__}: {exc}")
                 self.guide.capture_pending = False
                 self.guide.update_buttons()
+
+    def guide_learn(self):
+        if not self.guide or self.learning_wait is not None or self.capture_wait is not None:
+            return
+        try:
+            if not self.spec(self.guide.p).window:
+                if not self.choose_capture_window():
+                    return
+            if not self.guide.template_path or self.guide.chosen is None:
+                raise ValueError("Pilih satu monster pada gambar terlebih dahulu.")
+            seed = self.guide.pending.get(self.guide.template_path)
+            if seed is None:
+                seed = self.store.read_image(self.guide.template_path)
+            spec = self.spec(self.guide.p)
+            spec.learn_seed = seed
+            spec.learn_seed_rect = self.guide.chosen
+            self.native.window(spec.window.hwnd)
+            epoch = self.worker.command("learn", spec)
+            self.learning_wait = (epoch, time.monotonic())
+            self.guide.learning_pending = True
+            self.guide.feedback.setText(
+                f"Belajar otomatis {self.guide.p.learn_seconds} detik. Biarkan monster terlihat dan bergerak; "
+                "aplikasi tidak mengirim input game.")
+            self.guide.update_buttons()
+            self.guide.hide()
+            self.showMinimized()
+            def activate():
+                if self.learning_wait and self.learning_wait[0] == epoch and self.worker.epoch == epoch:
+                    try:
+                        self.native.request_foreground(spec.window)
+                    except Exception as exc:
+                        self.worker.event("Aktivasi game untuk belajar belum berhasil: " + str(exc))
+            QTimer.singleShot(150, activate)
+        except Exception as exc:
+            self.learning_wait = None
+            self.guide.learning_pending = False
+            self.guide.feedback.setText(f"Belajar belum dimulai: {type(exc).__name__}: {exc}")
+            self.guide.update_buttons()
+
+    def cancel_learning(self):
+        if self.learning_wait is None:
+            return
+        self.learning_wait = None
+        self.worker.command("pause")
+        self.showNormal()
+        if self.guide:
+            self.guide.learning_pending = False
+            self.guide.showNormal()
+            self.guide.raise_()
+            self.guide.feedback.setText("Belajar otomatis dibatalkan. Contoh tersimpan belum berubah.")
+            self.guide.update_buttons()
+
+    def finish_learning(self, crops=None, *, frames=0, confidence=0.0, error=""):
+        if self.learning_wait is None:
+            return
+        self.learning_wait = None
+        self.showNormal()
+        self.activateWindow()
+        if self.guide:
+            guide = self.guide
+            guide.showNormal()
+            guide.raise_()
+            guide.activateWindow()
+            guide.receive_learned(crops or [], frames=frames, confidence=confidence, error=error)
+        elif error:
+            self.reason.setText(error)
 
     def cancel_snapshot(self):
         if self.capture_wait is None:
@@ -737,6 +807,7 @@ class MainWindow(QMainWindow):
                 and not self.worker.closing.is_set()
                 and self.guide is None
                 and self.capture_wait is None
+                and self.learning_wait is None
                 and QApplication.activeModalWidget() is None):
             self.start_session()
 
@@ -764,6 +835,25 @@ class MainWindow(QMainWindow):
                 self.displayed_frame = obs.captured_at
                 self.preview_canvas.boxes = self.preview_boxes
                 self.preview_canvas.set_frame(frame)
+        if self.learning_wait is not None:
+            epoch, requested = self.learning_wait
+            matched = snap.get("learn_epoch") == epoch
+            if epoch != self.worker.epoch:
+                self.finish_learning(error="Belajar dibatalkan oleh Jeda/Berhenti atau perubahan pengaturan.")
+            elif time.monotonic() - requested > 55:
+                self.worker.command("pause")
+                self.finish_learning(error="Belajar melewati batas waktu. Pastikan game terlihat dan monster tidak tertutup.")
+            elif matched and snap.get("learning_done"):
+                self.finish_learning(
+                    snap.get("learned_crops", []), frames=snap.get("learn_frames", 0),
+                    confidence=snap.get("learn_confidence", 0.0), error=snap.get("learning_error", ""))
+            elif matched and self.guide:
+                frames = snap.get("learn_frames", 0)
+                samples = snap.get("learn_samples", 0)
+                confidence = snap.get("learn_confidence")
+                suffix = f" | tracking {confidence:.0%}" if isinstance(confidence, (int, float)) else ""
+                self.guide.feedback.setText(
+                    f"{snap.get('reason', 'Belajar monster...')} Frame {frames} | contoh unik {samples}{suffix}")
         if self.capture_wait is not None:
             _, epoch, requested = self.capture_wait
             matched = snap.get("capture_epoch") == epoch
@@ -791,6 +881,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.guide is not None:
             self.guide.reject()
+        self.learning_wait = None
         self.worker.close()
         if self.preparation is not None:
             self.preparation.reject()

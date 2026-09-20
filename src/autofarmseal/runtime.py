@@ -20,7 +20,8 @@ import cv2
 import numpy as np
 
 from .engine import Engine, State
-from .model import Profile
+from .learner import MultiPoseLearner
+from .model import Profile, Rect
 from .storage import Store
 from .vision import Detector
 from .windows import FocusError, Native, SafetyError, Window
@@ -34,6 +35,8 @@ class RunSpec:
     live: bool = False
     permitted: bool = False
     hotkeys_ready: bool = False
+    learn_seed: np.ndarray | None = None
+    learn_seed_rect: Rect | None = None
 
 
 class Worker(threading.Thread):
@@ -55,6 +58,10 @@ class Worker(threading.Thread):
         self.capture_at: float | None = None
         self.capture_deadline = 0.0
         self.capture_epoch: int | None = None
+        self.learn_epoch: int | None = None
+        self.learn_deadline = 0.0
+        self.learn_started = 0.0
+        self.learner: MultiPoseLearner | None = None
         self.observe_until = 0.0
         self.sct = None
         self.last_frame = None
@@ -79,8 +86,9 @@ class Worker(threading.Thread):
             if self.native:
                 self.native.halt()
             if spec:
+                seed = spec.learn_seed.copy() if spec.learn_seed is not None else None
                 spec = RunSpec(spec.profile.clone(), spec.window, spec.image, spec.live,
-                               spec.permitted, spec.hotkeys_ready)
+                               spec.permitted, spec.hotkeys_ready, seed, spec.learn_seed_rect)
             while self.commands.full():
                 try:
                     self.commands.get_nowait()
@@ -94,6 +102,8 @@ class Worker(threading.Thread):
         with self.lock:
             snapshot = self.latest.copy()
             self.latest.pop("captured", None)
+            self.latest.pop("learned_crops", None)
+            self.latest.pop("learning_done", None)
             logs = list(self.logs)
             self.logs.clear()
             return snapshot, logs
@@ -129,6 +139,8 @@ class Worker(threading.Thread):
         now = time.monotonic()
         self.capture_at = None
         self.capture_epoch = None
+        self.learn_epoch = None
+        self.learner = None
         if kind in {"pause", "stop"}:
             self.running = False
             if self.engine:
@@ -154,6 +166,26 @@ class Worker(threading.Thread):
             self.capture_deadline = now + 15.0
             self.publish(state="Menunggu gambar", capture_epoch=epoch,
                          reason="Klik game yang dipilih. Menunggu hingga 15 detik; tidak ada input game.")
+            return
+        if kind == "learn":
+            if not self.native or not spec.window:
+                raise SafetyError("Belajar otomatis membutuhkan jendela game Windows yang terlihat.")
+            if spec.learn_seed is None or spec.learn_seed_rect is None:
+                raise ValueError("Pilih satu monster pada gambar sebelum Belajar otomatis.")
+            if "world" not in spec.profile.regions:
+                raise ValueError("Tandai area pencarian monster terlebih dahulu.")
+            if (spec.profile.width, spec.profile.height) == (0, 0):
+                raise ValueError("Ambil satu gambar game terlebih dahulu.")
+            self.spec = spec
+            self.running = True
+            self.engine = None
+            self.detector = None
+            self.learn_epoch = epoch
+            self.learn_deadline = now + 15.0
+            self.learn_started = 0.0
+            self.learner = None
+            self.publish(state="Menunggu belajar", learn_epoch=epoch, learning=True,
+                         reason="Aktifkan game yang dipilih. Belajar dimulai saat game terlihat; tidak ada input game.")
             return
         errors = spec.profile.validate(calibrated=True, live=spec.live)
         if errors:
@@ -185,6 +217,14 @@ class Worker(threading.Thread):
         self.running = False
         self.capture_at = None
         message = f"{type(exc).__name__}: {exc}"
+        if self.learn_epoch is not None:
+            request_id, self.learn_epoch = self.learn_epoch, None
+            partial = self.learner.finalize() if self.learner is not None else []
+            self.learner = None
+            self.publish(state="Belajar berhenti", reason=message, learn_epoch=request_id,
+                         learning_error=message, learned_crops=partial, learning_done=True)
+            self.event("Belajar monster berhenti: " + message, level="warning")
+            return
         if self.capture_epoch is not None:
             request_id, self.capture_epoch = self.capture_epoch, None
             self.publish(state="Capture gagal", reason=message,
@@ -210,11 +250,53 @@ class Worker(threading.Thread):
     def _step(self, epoch: int):
         spec, detector = self.spec, self.detector
         now = time.monotonic()
+        if self.learn_epoch is not None:
+            request_id = self.learn_epoch
+            try:
+                frame, window, captured_at = self._capture()
+                after = self.native.check_capture_window(window)
+                if after.rect != window.rect:
+                    raise SafetyError("Jendela berubah ukuran/posisi saat belajar. Coba lagi.")
+            except FocusError:
+                if now >= self.learn_deadline:
+                    raise SafetyError("Game belum aktif setelah 15 detik. Tekan Belajar lagi lalu aktifkan game.")
+                self.publish(state="Menunggu game aktif", learn_epoch=request_id, learning=True,
+                             reason=f"Klik game yang dipilih. Sisa {max(1, int(self.learn_deadline-now))} detik.")
+                return
+            if (frame.shape[1], frame.shape[0]) != (spec.profile.width, spec.profile.height):
+                raise SafetyError("Ukuran jendela game berbeda dari gambar contoh. Pertahankan ukuran window saat belajar.")
+            if self.learner is None:
+                self.learner = MultiPoseLearner(
+                    frame, spec.learn_seed, spec.profile.regions["world"],
+                    initial_box=spec.learn_seed_rect, max_samples=spec.profile.learn_samples)
+                self.learn_started = now
+                self.learn_deadline = now + spec.profile.learn_seconds
+                self.event("Belajar monster dimulai", seconds=spec.profile.learn_seconds)
+            progress = self.learner.update(frame, now)
+            elapsed = max(0.0, now-self.learn_started)
+            left = max(0.0, self.learn_deadline-now)
+            done = now >= self.learn_deadline or len(self.learner.samples) >= spec.profile.learn_samples
+            if done:
+                crops = self.learner.finalize()
+                self.learn_epoch = None
+                self.learner = None
+                self.running = False
+                self.publish(state="Belajar selesai", reason=f"{len(crops)} contoh visual baru ditemukan.",
+                             learn_epoch=request_id, learning=False, learning_done=True,
+                             learned_crops=crops, learn_frames=progress.frames,
+                             learn_samples=len(crops), learn_confidence=progress.confidence)
+                self.event("Belajar monster selesai", frames=progress.frames, samples=len(crops))
+            else:
+                self.publish(state="Belajar monster", reason=f"Biarkan monster bergerak. Sisa {left:.0f} detik.",
+                             learn_epoch=request_id, learning=True, learn_elapsed=elapsed,
+                             learn_seconds=spec.profile.learn_seconds, learn_frames=progress.frames,
+                             learn_samples=progress.samples, learn_confidence=progress.confidence,
+                             learn_box=progress.box)
+            return
         if self.capture_at is not None:
             if now >= self.capture_at:
                 try:
                     image, window, captured_at = self._capture()
-                    # Do not accept an image taken while focus or client geometry changed.
                     after = self.native.check_capture_window(window)
                     if after.rect != window.rect:
                         raise SafetyError("Jendela berubah saat gambar diambil. Coba lagi.")
@@ -295,7 +377,8 @@ class Worker(threading.Thread):
                         self.running = False
                         if self.native:
                             self.native.blocked.set()
-                hz = self.spec.profile.scan_hz if self.spec and self.running else 10
+                hz = (8 if self.learn_epoch is not None else
+                      self.spec.profile.scan_hz if self.spec and self.running else 10)
                 self.wake.wait(max(0.01, 1/hz - (time.monotonic()-start)))
                 self.wake.clear()
         finally:

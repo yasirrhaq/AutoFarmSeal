@@ -115,3 +115,47 @@ def test_focus_wait_is_bounded_but_not_fixed_four_second_deadline(tmp_path):
             worker._step(request)
     finally:
         worker.handler.close()
+
+
+def test_learning_worker_returns_real_crops_without_input_engine(tmp_path):
+    import cv2
+    from autofarmseal.windows import Window
+
+    class FakeNative:
+        def halt(self):
+            pass
+        def check_capture_window(self, window):
+            return window
+
+    seed = np.zeros((40, 34, 3), np.uint8)
+    cv2.circle(seed, (17, 12), 8, (230, 230, 230), -1)
+    cv2.rectangle(seed, (9, 20), (26, 36), (60, 200, 120), -1)
+    cv2.line(seed, (9, 24), (1, 34), (240, 60, 30), 3)
+
+    def frame(x):
+        rng = np.random.default_rng(44)
+        image = rng.integers(10, 45, (140, 220, 3), np.uint8)
+        image[55:95, x:x+34] = seed
+        return image
+
+    worker = Worker(Store(tmp_path), FakeNative())
+    p = Profile(width=220, height=140, regions={"world": Rect(0, 20, 220, 120)},
+                learn_seconds=5, learn_samples=4)
+    window = Window(1, 1, "fixture", Rect(0, 0, 220, 140))
+    spec = RunSpec(p, window=window, learn_seed=seed, learn_seed_rect=Rect(70, 55, 34, 40))
+    try:
+        request = worker.command("learn", spec)
+        worker._apply_command(*worker.commands.get_nowait())
+        frames = iter([frame(70), frame(74), frame(79)])
+        worker._capture = lambda: (next(frames), window, time.monotonic())
+        worker._step(request)
+        assert worker.engine is None and worker.learn_epoch == request
+        worker.learn_deadline = time.monotonic()-1
+        worker._step(request)
+        snap, _ = worker.read()
+        assert snap["learning_done"]
+        assert snap["learn_epoch"] == request
+        assert isinstance(snap["learned_crops"], list)
+        assert worker.engine is None and not worker.running
+    finally:
+        worker.handler.close()

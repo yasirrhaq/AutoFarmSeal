@@ -80,6 +80,8 @@ class SetupGuide(QDialog):
     capture_requested = Signal()
     capture_cancelled = Signal()
     choose_window_requested = Signal()
+    learn_requested = Signal()
+    learn_cancelled = Signal()
 
     def __init__(self, profile, store, *, mode="monster", can_capture=False, parent=None):
         super().__init__(parent)
@@ -93,6 +95,8 @@ class SetupGuide(QDialog):
         self.chosen = None
         self.sampled_ok = False
         self.capture_pending = False
+        self.learning_pending = False
+        self.learn_summary = ""
         self.can_capture = can_capture
         self.test_started = 0.0
         self.test_thread = None
@@ -162,6 +166,13 @@ class SetupGuide(QDialog):
         self.test_button = QPushButton("Coba cari monster (tanpa klik)")
         self.test_button.clicked.connect(self.run_test)
         root.addWidget(self.test_button)
+        self.learn_button = QPushButton("Belajar otomatis 15 detik")
+        self.learn_button.setObjectName("primary")
+        self.learn_button.clicked.connect(self.request_learning)
+        root.addWidget(self.learn_button)
+        self.abort_learning_button = QPushButton("Hentikan belajar otomatis")
+        self.abort_learning_button.clicked.connect(lambda _checked=False: self.learn_cancelled.emit())
+        outer.addWidget(self.abort_learning_button)
         self.other_button = QPushButton("Coba pada gambar lain...")
         self.other_button.clicked.connect(lambda: self.open_file(test_only=True))
         root.addWidget(self.other_button)
@@ -210,6 +221,7 @@ class SetupGuide(QDialog):
         self.choose_window_button.setVisible(step == "source")
         self.draft_button.setVisible(step == "review" and self.mode == "monster")
         self.test_button.setVisible(step == "review" and self.mode == "monster")
+        self.learn_button.setVisible(step == "review" and self.mode == "monster")
         self.other_button.setVisible(step == "review" and self.mode == "monster")
         self.ack.setVisible(step == "review")
         self.canvas.sample_mode = step.startswith("sample:")
@@ -239,7 +251,10 @@ class SetupGuide(QDialog):
                 return "Belum terbaca. Tekan Kembali untuk memperbaiki warna dan kotak. Jangan aktifkan potion dulu."
             return f"Perkiraan {self.mode.upper()}: {value:.0%}. Cocokkan dengan gambar; ini bukan data langsung dari game."
         if self.mode == "monster":
-            return "Belum diuji. Tekan Coba cari monster. Setelah itu, coba juga gambar lain dengan ukuran sama."
+            if self.learn_summary:
+                return self.learn_summary + " Uji pada gambar terbaru sebelum mengaktifkan farming."
+            return ("Satu contoh awal siap. Untuk monster yang berputar/bergerak, tekan Belajar otomatis 15 detik "
+                    "agar aplikasi mengumpulkan pose nyata. Atau langsung Coba cari monster untuk uji dasar.")
         return "Contoh tersimpan setelah Selesai ditekan. Tetap perlu pemeriksaan pada keadaan yang TIDAK cocok."
 
     def step_ready(self):
@@ -264,9 +279,43 @@ class SetupGuide(QDialog):
         if not self.capture_pending and not self.testing and not self.closed:
             self.capture_requested.emit()
 
+    def request_learning(self, _checked=False):
+        if (self.step == "review" and self.mode == "monster" and self.template_path
+                and not self.capture_pending and not self.testing and not self.learning_pending
+                and not self.closed):
+            self.learn_requested.emit()
+
+    def receive_learned(self, crops, *, frames=0, confidence=0.0, error=""):
+        """Stage real captured poses transactionally; save only when the guide is saved."""
+        self.learning_pending = False
+        added = 0
+        capacity = max(0, 12-len(self.p.templates["monster"]))
+        for crop in list(crops)[:capacity]:
+            if crop is None or getattr(crop, "size", 0) == 0 or min(crop.shape[:2]) < 6:
+                continue
+            temporary = f"templates/{uuid4().hex}.png"
+            self.p.templates["monster"].append(temporary)
+            self.pending[temporary] = crop.copy()
+            added += 1
+        self.p.input_verified = False
+        self.test_done = False
+        self.ack.setChecked(False)
+        if added:
+            self.learn_summary = (f"Belajar selesai: {frames} frame dianalisis, {added} contoh visual baru dipilih "
+                                  f"(confidence tracking terakhir {confidence:.0%}).")
+            if error:
+                self.learn_summary += " Tracking berhenti lebih awal: " + error
+        else:
+            self.learn_summary = ("Belajar belum menghasilkan contoh visual baru. "
+                                  + (error or "Monster mungkin terlalu mirip antar-frame atau tracking tidak stabil."))
+        self.feedback.setText(self.learn_summary)
+        self.render()
+
     def blocking_reason(self):
         if self.capture_pending:
             return "Sedang mengambil gambar. Tunggu hasil atau tekan Batalkan pengambilan gambar."
+        if self.learning_pending:
+            return "Sedang belajar dari layar game. Biarkan monster terlihat; tidak ada input ke game."
         if self.testing:
             return "Sedang menguji gambar; tombol akan aktif setelah hasil muncul."
         if self.canvas.frame is None:
@@ -289,11 +338,15 @@ class SetupGuide(QDialog):
         return "Siap. Tekan Simpan dan selesai." if self.step == "review" else "Siap. Tekan Lanjut."
 
     def update_buttons(self, *_):
-        busy = self.capture_pending or self.testing
+        busy = self.capture_pending or self.testing or self.learning_pending
         self.next_button.setText("Simpan dan selesai" if self.step == "review" else "Lanjut")
         self.next_button.setEnabled(self.step_ready() and not busy)
         self.back_button.setEnabled(self.index > 0 and not busy)
         self.test_button.setEnabled(not busy)
+        self.learn_button.setEnabled(not busy and self.step == "review" and self.mode == "monster"
+                                     and self.template_path is not None)
+        self.learn_button.setText(f"Belajar otomatis {self.p.learn_seconds} detik")
+        self.abort_learning_button.setVisible(self.learning_pending)
         self.other_button.setEnabled(not busy)
         self.capture_button.setEnabled(not busy)
         self.file_button.setEnabled(not busy)
@@ -400,6 +453,8 @@ class SetupGuide(QDialog):
                 if step != "monster":
                     self.p.regions[step] = rect
                 self.chosen = rect
+                if step == "monster":
+                    self.learn_summary = ""
                 self.canvas.boxes = [(rect, "Contoh yang dipilih")]
             else:
                 return
@@ -503,7 +558,8 @@ class SetupGuide(QDialog):
         self.update_buttons()
 
     def accept(self):
-        if self.saved or self.step != "review" or not self.step_ready() or self.capture_pending:
+        if (self.saved or self.step != "review" or not self.step_ready()
+                or self.capture_pending or self.learning_pending):
             return
         if self.test_thread and self.test_thread.is_alive():
             return
@@ -511,7 +567,7 @@ class SetupGuide(QDialog):
 
     def save_draft(self, _checked=False):
         if (self.mode != "monster" or self.step != "review" or not self.template_path
-                or self.testing or self.capture_pending or self.saved):
+                or self.testing or self.capture_pending or self.learning_pending or self.saved):
             return
         # Saving reference data is not enabling or verifying game input.
         self.save_profile()
@@ -541,6 +597,7 @@ class SetupGuide(QDialog):
     def cleanup(self, _result=0):
         self.closed = True
         self.testing = False
+        self.learning_pending = False
         self.test_cancel.set()
         self.test_timer.stop()
 

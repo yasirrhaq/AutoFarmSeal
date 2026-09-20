@@ -52,6 +52,7 @@ def test_config_roundtrip():
     ("id", "../../p"), ("hp_key", "f10"), ("pickup_key", "enter+ctrl"),
     ("hp_enabled", "yes"), ("hp_lower", [200, 1, 1]), ("hp_lower", [-1, 1, 1]),
     ("width", -1), ("name", ""), ("name", "a"*81),
+    ("learn_seconds", 2), ("learn_samples", 99), ("mirror_templates", "yes"),
 ])
 def test_reject_invalid_config(name, value):
     p = profile()

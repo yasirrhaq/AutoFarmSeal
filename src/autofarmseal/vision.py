@@ -39,7 +39,7 @@ def fill_ratio(frame: np.ndarray, region: Rect | None, lower, upper) -> float | 
     hsv = cv2.cvtColor(region.crop(frame), cv2.COLOR_BGR2HSV)
     if lower[0] <= upper[0]:
         mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
-    else:  # Red can wrap the OpenCV hue axis.
+    else:
         mask = cv2.inRange(hsv, np.array([0, *lower[1:]]), np.array(upper))
         mask |= cv2.inRange(hsv, np.array(lower), np.array([179, *upper[1:]]))
     occupied = (mask > 0).mean(axis=0) >= 0.4
@@ -67,12 +67,18 @@ class Detector:
                 if min(gray.shape) < 6 or float(gray.std()) < 3:
                     raise ValueError(f"Template {path} terlalu kecil atau polos.")
                 scales = self.p.scales if kind == "monster" else [1.0]
-                for scale in scales:
-                    f = scale * (self.factor if kind == "monster" else 1.0)
-                    h, w = max(6, round(gray.shape[0] * f)), max(6, round(gray.shape[1] * f))
-                    resized = cv2.resize(gray, (w, h), interpolation=cv2.INTER_AREA)
-                    if resized.std() >= 3:
-                        self.bank[kind].append(resized)
+                sources = [gray]
+                if kind == "monster" and self.p.mirror_templates:
+                    mirrored = cv2.flip(gray, 1)
+                    if not np.array_equal(mirrored, gray):
+                        sources.append(mirrored)
+                for source in sources:
+                    for scale in scales:
+                        f = scale * (self.factor if kind == "monster" else 1.0)
+                        h, w = max(6, round(source.shape[0] * f)), max(6, round(source.shape[1] * f))
+                        resized = cv2.resize(source, (w, h), interpolation=cv2.INTER_AREA)
+                        if resized.std() >= 3:
+                            self.bank[kind].append(resized)
         if not self.bank["monster"]:
             raise ValueError("Tidak ada template monster yang dapat dipakai.")
 
@@ -113,7 +119,6 @@ class Detector:
                     continue
                 result = np.nan_to_num(cv2.matchTemplate(
                     sample, template, cv2.TM_CCOEFF_NORMED), nan=-1)
-                # Bounded peaks per template, rather than all thresholded pixels.
                 for _ in range(8):
                     _, score, _, (x, y) = cv2.minMaxLoc(result)
                     if score < p.threshold:

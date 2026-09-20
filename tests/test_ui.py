@@ -241,3 +241,42 @@ def test_one_image_observation_cannot_create_input_plan(qtbot, tmp_path, monkeyp
     assert spec.image is frame
     window.close()
     qtbot.waitUntil(lambda: not window.worker.is_alive())
+
+
+def test_guide_auto_learning_stages_multiple_real_examples(qtbot, tmp_path):
+    from autofarmseal.guide import SetupGuide
+    from autofarmseal.model import Rect
+    guide = SetupGuide(Profile(), Store(tmp_path))
+    qtbot.addWidget(guide)
+    frame = guide_scene()
+    guide.set_frame(frame)
+    guide.name.setText("Glora")
+    guide.advance()
+    guide.select(Rect(0, 0, 500, 250))
+    guide.advance()
+    guide.select(Rect(100, 80, 45, 40))
+    guide.advance()
+    assert guide.step == "review"
+    assert guide.learn_button.isEnabled()
+    before = len(guide.p.templates["monster"])
+    crops = [frame[80:120, 100:145].copy(), frame[90:132, 130:177].copy()]
+    guide.receive_learned(crops, frames=75, confidence=0.81)
+    assert len(guide.p.templates["monster"]) == before + 2
+    assert len(guide.pending) == before + 2
+    assert "75 frame" in guide.feedback.text()
+    assert "2 contoh visual baru" in guide.feedback.text()
+    assert not guide.p.input_verified
+    guide.reject()
+
+
+def test_hotkey_cannot_arm_while_auto_learning(qtbot, tmp_path, monkeypatch):
+    window = MainWindow(Store(tmp_path), smoke=True)
+    qtbot.addWidget(window)
+    starts = []
+    monkeypatch.setattr(window, "start_session", lambda: starts.append(1))
+    window.learning_wait = (window.worker.epoch, 0.0)
+    window.hotkey("arm", window.worker.epoch)
+    assert not starts
+    window.learning_wait = None
+    window.close()
+    qtbot.waitUntil(lambda: not window.worker.is_alive())

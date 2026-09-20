@@ -64,6 +64,9 @@ class Profile:
     threshold: float = 0.86
     signal_threshold: float = 0.93
     scales: list[float] = field(default_factory=lambda: [0.85, 1.0, 1.15])
+    mirror_templates: bool = True
+    learn_seconds: int = 15
+    learn_samples: int = 10
     click_x: float = 0.5
     click_y: float = 0.65
     scan_hz: int = 6
@@ -139,9 +142,11 @@ class Profile:
             "progress_timeout": (2, 60), "search_timeout": (3, 120),
             "loot_attempts": (1, 5), "session_minutes": (1, 120),
             "max_frame_age": (0.1, 1.0), "width": (0, 7680), "height": (0, 4320),
+            "learn_seconds": (5, 30), "learn_samples": (2, 11),
         }
         integer_fields = {"scan_hz", "max_search_width", "max_ineffective_potions",
-                          "max_attempts", "loot_attempts", "session_minutes", "width", "height"}
+                          "max_attempts", "loot_attempts", "session_minutes", "width", "height",
+                          "learn_seconds", "learn_samples"}
         for key, (low, high) in numeric.items():
             v = getattr(self, key)
             if type(v) not in (int, float) or not math.isfinite(v) or not low <= v <= high:
@@ -149,7 +154,7 @@ class Profile:
             elif key in integer_fields and type(v) is not int:
                 errors.append(f"{key} harus bilangan bulat.")
         for key in ("hp_enabled", "ap_enabled", "loot_enabled", "ctrl_click",
-                    "input_verified", "screenshot_failures"):
+                    "input_verified", "screenshot_failures", "mirror_templates"):
             if type(getattr(self, key)) is not bool:
                 errors.append(f"{key} harus true/false.")
         if not isinstance(self.scales, list) or not 1 <= len(self.scales) <= 5 or any(
