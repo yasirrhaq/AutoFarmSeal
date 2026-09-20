@@ -1,6 +1,6 @@
 # AutoFarmSeal
 
-**v0.2.1 — perbaikan capture dan panduan tombol.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
+**v0.3.0 — belajar monster otomatis multi-pose.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
 
 ## Mulai tanpa mengedit kode
 
@@ -15,6 +15,12 @@ Alasan **Lanjut/Simpan** belum aktif selalu terlihat di footer. **Simpan contoh 
 Selesai mengikuti panduan tidak otomatis mengizinkan klik atau membuktikan akurasi. Jangan membuat tanda pertarungan sembarang untuk melewati syarat. Bila belum tahu indikator yang cocok, tetap gunakan uji deteksi dan minta bantuan dengan rekaman satu pertarungan.
 
 **[Panduan lengkap bahasa Indonesia](docs/MULAI_DI_SINI.md)**. Profil v0.1/v0.2 tetap terbaca; jangan menghapus folder data saat memperbarui aplikasi.
+
+## Belajar monster otomatis
+
+Untuk monster yang berubah arah/pose, tandai satu monster sekali pada panduan lalu tekan **Belajar otomatis 15 detik**. Selama proses ini aplikasi hanya membaca layar: optical-flow tracking mengikuti target, pencarian visual mencoba memperoleh kembali target bila tracking melemah, dan hanya crop nyata yang cukup berbeda yang ditambahkan sebagai contoh. Runtime juga dapat mencoba mirror kiri/kanan tanpa menyimpan file duplikat.
+
+Learning mode tidak mengirim klik/tombol game dan tidak menandai input sebagai terverifikasi. Pertahankan ukuran window, biarkan target tetap terlihat, dan uji hasilnya pada frame baru. Occlusion, target yang sangat mirip, perubahan kamera ekstrem, atau perpindahan ke objek lain masih dapat menggagalkan tracking; bila itu terjadi, ulangi belajar atau tambahkan contoh manual. Ini belum SAM/YOLO/semantic recognition.
 
 ## What is implemented
 
