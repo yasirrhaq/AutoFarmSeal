@@ -94,11 +94,12 @@ def bat_scene(patch):
     return frame
 
 
-def bat_profile(animated):
+def bat_profile(animated, count=None):
     p = Profile(width=280, height=180, regions={"world": Rect(0, 0, 280, 180)},
                 threshold=0.86, scales=[1.0], animated_target=animated,
                 mirror_templates=False)
-    p.templates["monster"] = ["templates/bat.png"]
+    count = (3 if animated else 1) if count is None else count
+    p.templates["monster"] = [f"templates/bat-{i}.png" for i in range(count)]
     p.templates["combat"] = []
     p.templates["defeat"] = []
     return p
@@ -115,19 +116,19 @@ def test_animated_detector_reacquires_stable_body_when_wings_change_pose():
     best = tolerant.detections[0]
     assert best.box == Rect(120, 70, 70, 50)
     assert not best.strong
-    assert best.score >= 0.68
+    assert best.votes >= 2
+    assert best.score >= 0.74
 
 
-def test_temporal_mode_confirms_weak_deformable_match_on_second_frame():
+def test_temporal_mode_marks_weak_consensus_without_creating_it():
     seed = bat_patch(True)
     frame = bat_scene(bat_patch(False))
     detector = Detector(bat_profile(True), lambda _path: seed)
     first = detector.observe(frame, 1, temporal=True)
-    second = detector.observe(frame, 1.2, temporal=True)
-    assert not first.detections
-    assert second.detections
-    assert second.detections[0].temporal
-    assert not second.detections[0].strong
+    assert first.detections
+    assert first.detections[0].votes >= detector.required_votes
+    assert first.detections[0].temporal
+    assert not first.detections[0].strong
 
 
 def test_temporal_mode_bridges_only_one_missing_scan():
@@ -151,3 +152,34 @@ def test_learning_samples_have_margin_for_fast_deforming_extremities():
     assert samples
     assert samples[0].shape[1] > seed.shape[1]
     assert samples[0].shape[0] > seed.shape[0]
+
+
+def test_animated_mode_rejects_even_perfect_single_source_false_positive():
+    """One crop cannot vote for itself via scales/mirrors.
+
+    This models the failure seen on grass/rocks: one learned crop can correlate
+    extremely well with background, but other independent learned poses do not
+    support that location.
+    """
+    decoy = bat_patch(True)
+    other_a = monster_patch(70, 50)
+    other_b = cv2.flip(monster_patch(70, 50), 0)
+    profile = bat_profile(True, count=3)
+    mapping = {
+        "templates/bat-0.png": decoy,
+        "templates/bat-1.png": other_a,
+        "templates/bat-2.png": other_b,
+    }
+    frame = bat_scene(decoy)
+    detector = Detector(profile, lambda path: mapping[path])
+    result = detector.observe(frame, 1)
+    assert not result.detections
+
+
+def test_animated_consensus_reports_distinct_source_votes():
+    seed = bat_patch(True)
+    frame = bat_scene(bat_patch(False))
+    detector = Detector(bat_profile(True, count=3), lambda _path: seed)
+    result = detector.observe(frame, 1)
+    assert result.detections
+    assert result.detections[0].votes == 3

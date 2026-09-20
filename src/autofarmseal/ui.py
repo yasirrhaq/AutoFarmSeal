@@ -828,7 +828,7 @@ class MainWindow(QMainWindow):
         if frame is not None:
             self.last_image = frame
             self.preview_boxes = [
-                (d.box, ("~" if d.temporal else "") + f"{d.score:.2f}")
+                (d.box, ("~" if d.temporal else "") + f"{d.score:.2f} v{d.votes}")
                 for d in obs.detections
             ] if obs else []
             if (self.preview_dialog and self.preview_dialog.isVisible()

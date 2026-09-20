@@ -1,4 +1,4 @@
-# Mulai memakai AutoFarmSeal 0.3.2
+# Mulai memakai AutoFarmSeal 0.3.3
 
 ## Buka aplikasinya
 
@@ -26,6 +26,12 @@ Aplikasi mengikuti target dan memilih beberapa crop nyata yang cukup berbeda sec
 Tetap kotaki monster satu kali lalu jalankan **Belajar otomatis 15 detik**. Biarkan beberapa fase animasi muncul. v0.3.2 otomatis menandai profil hasil multi-pose sebagai target animasi: crop diberi ruang ekstra untuk sayap/anggota tubuh, bagian tengah tubuh diberi bobot lebih besar, dan deteksi kontinu memakai dukungan beberapa frame agar satu kepakan yang sangat berbeda tidak langsung membuat target hilang.
 
 Pada pratinjau kontinu, skor dengan awalan `~` berarti posisi sedang dipertahankan/dikonfirmasi dari frame berdekatan. Ini membantu stabilitas visual tetapi bukan bukti identitas 100%. Jika kotak mulai pindah ke pohon/player/monster lain, hentikan dan ulangi proses belajar pada area yang lebih bersih.
+
+## Membaca label deteksi
+
+Mulai v0.3.3 label seperti `0.82 v3` berarti skor gabungan 0.82 dan **3 contoh visual berbeda** mendukung lokasi yang sama. Untuk target animasi, satu contoh tidak boleh lagi membuat kotak sendiri. Awalan `~` tetap berarti hasil sedang dibantu smoothing antar-frame setelah kandidat lebih dulu lolos pemeriksaan multi-contoh.
+
+Kalau masih muncul kotak pada rumput/batu, jangan turunkan threshold. Ambil screenshot hasilnya agar filter negatif bisa diperbaiki. Kalau monster asli justru sering hilang, jalankan Belajar otomatis lagi agar profil mendapat lebih banyak pose nyata.
 
 ## Kedua: cek pada gambar terbaru
 

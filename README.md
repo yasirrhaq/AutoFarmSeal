@@ -1,6 +1,6 @@
 # AutoFarmSeal
 
-**v0.3.2 — animated/deformable target recognition.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
+**v0.3.3 — false-positive guard for animated targets.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
 
 ## Mulai tanpa mengedit kode
 
@@ -27,6 +27,14 @@ Learning mode tidak mengirim klik/tombol game dan tidak menandai input sebagai t
 v0.3.2 menambahkan jalur khusus otomatis untuk profil yang sudah memperoleh beberapa pose dari **Belajar otomatis**. Crop hasil belajar diberi margin lebih besar, pencocokan memberi bobot lebih besar pada bagian tengah tubuh, dan target yang lebar seperti kelelawar dapat dicari ulang dari core tubuh saat bentuk sayap berubah ekstrem. Pada deteksi kontinu, kecocokan lemah harus didukung frame berdekatan dan satu frame yang miss dapat dijembatani untuk mengurangi flicker. Label skor yang diawali `~` berarti hasil sedang ditopang temporal, bukan match kuat satu frame.
 
 Heuristik ini bukan segmentation/YOLO dan tidak menjamin semua monster terbang akan benar. Core-search hanya dijalankan sebagai fallback ketika tidak ada strict pose match dan jumlah variannya dibatasi agar beban CPU tetap terkendali. Jalur temporal hanya digunakan pada observasi tanpa input; combat tetap dinonaktifkan pada milestone ini.
+
+## False-positive guard v0.3.3
+
+Animated/deformable mode is now intentionally conservative. A match from one learned crop is never enough, even if one scale produces a very high correlation. Candidates are grouped by location and must receive support from **independent saved source crops**: normally two votes, or three votes when the profile has six or more learned examples. Scale and mirror variants from the same PNG count as only one vote.
+
+Whole-template matches are also checked against the center body so repeated grass/terrain around a learned crop cannot dominate the score. The expensive stable-body fallback runs only when normal consensus finds nothing. Preview labels include `vN` (for example `0.82 v3`) so the user can see how many independent source crops supported a box.
+
+This deliberately prefers a missed detection over a false target. If a true monster disappears after this change, run Belajar otomatis again in a cleaner view to collect more independent poses instead of lowering the threshold aggressively.
 
 ## What is implemented
 

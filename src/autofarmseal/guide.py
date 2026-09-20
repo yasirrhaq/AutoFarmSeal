@@ -553,7 +553,9 @@ class SetupGuide(QDialog):
             self.feedback.setText("Gambar belum bisa diuji: " + result)
         else:
             self.test_done = True
-            self.canvas.boxes = [(d.box, "Kandidat monster") for d in result.detections]
+            self.canvas.boxes = [
+                (d.box, f"{d.score:.2f} v{d.votes}") for d in result.detections
+            ]
             self.canvas.update()
             count = len(result.detections)
             self.feedback.setText(
