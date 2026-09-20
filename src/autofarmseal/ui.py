@@ -140,12 +140,10 @@ class MainWindow(QMainWindow):
         self.guide_button.clicked.connect(lambda: self.guided_setup())
         welcome_layout.addWidget(self.guide_button)
         step_buttons = QHBoxLayout()
-        self.observe_button = QPushButton("2. Coba deteksi (tidak menyerang)")
+        self.observe_button = QPushButton("2. Coba deteksi pada gambar terbaru (tanpa menyerang)")
+        self.observe_button.setObjectName("primary")
         self.observe_button.clicked.connect(self.observe_once)
         step_buttons.addWidget(self.observe_button)
-        self.prepare_button = QPushButton("3. Siapkan farming")
-        self.prepare_button.clicked.connect(self.farming_setup)
-        step_buttons.addWidget(self.prepare_button)
         welcome_layout.addLayout(step_buttons)
         safe_note = QLabel("Tandai satu monster sekali. Setelah itu Belajar otomatis dapat mengumpulkan "
                            "beberapa pose nyata selama 15 detik. Tidak ada klik atau serangan saat belajar.")
@@ -153,7 +151,7 @@ class MainWindow(QMainWindow):
         safe_note.setObjectName("muted")
         welcome_layout.addWidget(safe_note)
         root.addWidget(welcome)
-        self.advanced_button = QPushButton("Tampilkan potion dan pengaturan lanjutan")
+        self.advanced_button = QPushButton("Pengaturan lanjutan (belum diperlukan untuk tahap deteksi)")
         self.advanced_button.setCheckable(True)
         self.advanced_button.toggled.connect(self.toggle_advanced)
         root.addWidget(self.advanced_button)
@@ -203,13 +201,15 @@ class MainWindow(QMainWindow):
             b.clicked.connect(callback)
             setup.addWidget(b)
         advanced_layout.addLayout(setup)
-        self.live = QCheckBox("Izinkan klik dan tombol otomatis (setelah persiapan teruji)")
-        self.live.setEnabled(bool(self.native and self.native.input_available))
+        self.live = QCheckBox("Klik / serang otomatis — belum diaktifkan pada tahap deteksi")
+        self.live.setChecked(False)
+        self.live.setEnabled(False)
+        self.live.setToolTip("Kita selesaikan deteksi monster terlebih dahulu. Combat akan dibuka pada tahap berikutnya.")
         advanced_layout.addWidget(self.live)
         self.permitted = QCheckBox("Saya menguji di lingkungan yang mengizinkan otomatisasi.")
         advanced_layout.addWidget(self.permitted)
         controls = QHBoxLayout()
-        self.start_button = QPushButton("Mulai / Lanjut   F8")
+        self.start_button = QPushButton("Deteksi terus-menerus (tanpa klik)   F8")
         self.start_button.setObjectName("primary")
         self.start_button.clicked.connect(self.start_session)
         controls.addWidget(self.start_button, 2)
@@ -224,14 +224,14 @@ class MainWindow(QMainWindow):
         self.status = QLabel("Siap — mode observasi")
         self.status.setObjectName("status")
         root.addWidget(self.status)
-        self.reason = QLabel("Mulai dari pengaturan mudah. Karakter belum digerakkan otomatis.")
+        self.reason = QLabel("Tahap aktif: deteksi monster saja. Tidak ada serangan, potion, loot, atau penentuan kalah.")
         self.reason.setWordWrap(True)
         root.addWidget(self.reason)
         self.metrics = QLabel("HP —   AP —   Durasi 00:00   Konfirmasi 0   Hasil tidak diketahui 0")
         self.metrics.setObjectName("muted")
         root.addWidget(self.metrics)
         bottom = QHBoxLayout()
-        self.last_log = QLabel("F10 menghentikan input; auto-attack bawaan game mungkin perlu dihentikan manual.")
+        self.last_log = QLabel("F8 mulai deteksi, F9 jeda, F10 berhenti. Tahap ini tidak mengirim input ke game.")
         self.last_log.setWordWrap(True)
         self.last_log.setObjectName("muted")
         bottom.addWidget(self.last_log, 1)
@@ -357,11 +357,9 @@ class MainWindow(QMainWindow):
         self.guide_hint.setText(hint_for(self.current()))
         # These buttons route to setup with an explanation, never silently do nothing.
         self.observe_button.setEnabled(True)
-        self.prepare_button.setEnabled(True)
         self.observe_button.setToolTip("Uji satu gambar" if ready else "Buka panduan untuk menambahkan contoh dahulu")
         if hasattr(self, "start_button"):
-            self.start_button.setText("Mulai farming   F8" if self.live.isChecked()
-                                      else "Amati game (tanpa klik)   F8")
+            self.start_button.setText("Deteksi terus-menerus (tanpa klik)   F8")
 
     def toggle_advanced(self, visible):
         self.advanced_panel.setVisible(visible)
@@ -870,9 +868,11 @@ class MainWindow(QMainWindow):
                 self.finish_snapshot(frame=snap["captured"])
             elif matched and self.guide:
                 self.guide.feedback.setText(snap.get("reason", "Menunggu gambar..."))
-        if self.live.isChecked() and self.worker.running and not (self.hotkeys and self.hotkeys.ready):
-            self.worker.command("stop")
-            self.reason.setText("Hotkey darurat tidak aktif; input dihentikan.")
+        if self.live.isChecked():
+            # Detection milestone: live input is intentionally unavailable even if a legacy profile requests it.
+            self.live.setChecked(False)
+            self.worker.command("pause")
+            self.reason.setText("Tahap ini hanya deteksi monster; input game belum diaktifkan.")
 
     def error(self, exc):
         self.worker.command("pause")
