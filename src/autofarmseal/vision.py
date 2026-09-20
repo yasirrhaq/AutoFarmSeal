@@ -224,7 +224,13 @@ class Detector:
             else:
                 center_floor = max(0.76, p.threshold - 0.10)
                 raw_floor = max(0.24, p.threshold - 0.60)
-                score = 0.18 * max(0.0, raw) + 0.72 * max(0.0, center) + 0.10 * edge
+                if center_hint is not None:
+                    # Stable-body reacquisition intentionally trusts the core more
+                    # than the deforming wings/limbs, but still requires independent
+                    # source consensus later.
+                    score = 0.12 * max(0.0, raw) + 0.80 * max(0.0, center) + 0.08 * edge
+                else:
+                    score = 0.18 * max(0.0, raw) + 0.72 * max(0.0, center) + 0.10 * edge
                 if raw < raw_floor or center < center_floor or score < max(0.74, p.threshold - 0.12):
                     return None
         else:
@@ -279,7 +285,7 @@ class Detector:
             support_scores = [p.detection.score for p in unique[:self.required_votes]]
             mean_support = float(np.mean(support_scores)) if support_scores else 0.0
             consensus = votes >= self.required_votes and mean_support >= max(
-                0.76, self.p.threshold - 0.10)
+                0.74, self.p.threshold - 0.12)
             if not consensus:
                 continue
             det = Detection(
