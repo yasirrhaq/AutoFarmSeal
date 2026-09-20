@@ -8,7 +8,6 @@ them as additional references. No game input is sent from this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 
 import cv2
 import numpy as np
