@@ -72,8 +72,9 @@ GUIDES = {
 
 def hint_for(profile: Profile) -> str:
     if "world" not in profile.regions or not profile.templates["monster"]:
-        return "Langkah pertama: tekan Mulai pengaturan mudah."
-    return "Contoh monster tersimpan. Coba deteksi dulu; gambar yang cocok belum membuktikan farming siap."
+        return "Tahap 1: ajari bentuk monster. Combat belum digunakan."
+    return ("Tahap 2: uji deteksi pada beberapa gambar/pose baru. "
+            "Serangan, potion, loot, dan penentuan kalah sengaja belum digunakan.")
 
 
 class SetupGuide(QDialog):
@@ -613,8 +614,8 @@ class FarmingPreparation(QDialog):
         label = QLabel("Siapkan satu per satu")
         label.setObjectName("title")
         root.addWidget(label)
-        note = QLabel("Uji deteksi boleh dicoba lebih dulu. Untuk farming, aplikasi juga perlu tahu kondisi "
-                      "darah dan tanda pertarungan. Tersimpan tidak sama dengan sudah teruji di game.")
+        note = QLabel("Dialog ini disimpan untuk tahap berikutnya. Pada v0.3.1 fokus aplikasi hanya "
+                      "mengenali monster dengan stabil; jangan konfigurasi combat untuk mengejar tombol aktif.")
         note.setWordWrap(True)
         root.addWidget(note)
         tasks = [
