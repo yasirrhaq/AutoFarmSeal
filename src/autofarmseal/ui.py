@@ -231,7 +231,7 @@ class MainWindow(QMainWindow):
         self.reason = QLabel("Tahap aktif: deteksi monster saja. Tidak ada serangan, potion, loot, atau penentuan kalah.")
         self.reason.setWordWrap(True)
         root.addWidget(self.reason)
-        self.metrics = QLabel("HP —   AP —   Durasi 00:00   Konfirmasi 0   Hasil tidak diketahui 0")
+        self.metrics = QLabel("Kandidat 0   Waktu 00:00")
         self.metrics.setObjectName("muted")
         root.addWidget(self.metrics)
         bottom = QHBoxLayout()
@@ -367,8 +367,8 @@ class MainWindow(QMainWindow):
 
     def toggle_advanced(self, visible):
         self.advanced_panel.setVisible(visible)
-        self.advanced_button.setText("Sembunyikan pengaturan lanjutan" if visible
-                                    else "Tampilkan potion dan pengaturan lanjutan")
+        self.advanced_button.setText("Sembunyikan pengaturan deteksi lanjutan" if visible
+                                    else "Pengaturan deteksi lanjutan (opsional)")
         QTimer.singleShot(0, self.fit_height)
 
     def fit_height(self):
