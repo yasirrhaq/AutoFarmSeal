@@ -1,14 +1,14 @@
 # AutoFarmSeal
 
-**v0.3.0 — belajar monster otomatis multi-pose.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
+**v0.3.1 — detection-first milestone.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
 
 ## Mulai tanpa mengedit kode
 
 Ekstrak seluruh ZIP, lalu buka `AutoFarmSeal.exe`. Jangan memindahkan `.exe` sendirian: folder `_internal` harus tetap di sampingnya. Tidak perlu memasang Python untuk paket Windows.
 
-1. Tekan **1. Mulai pengaturan mudah**. Pilih game melalui **Pilih / ganti jendela game...** bila belum dipilih. Tekan **Ambil gambar dari game**; aplikasi mencoba menampilkan game, atau menunggu kamu mengaktifkannya hingga 15 detik. Ikuti empat langkah: ambil gambar, kotaki area pencarian, kotaki satu monster, lalu coba hasilnya. Tidak perlu mengisi koordinat, angka warna HSV atau skor deteksi.
-2. Tekan **2. Coba deteksi (tidak menyerang)** untuk melihat hasil pada satu gambar terbaru. Saat aplikasi mengecil, aktifkan game bila belum di depan; hasil otomatis muncul kembali. Mode ini tidak mengirim input game.
-3. **3. Siapkan farming** menunjukkan kebutuhan berikutnya satu per satu. Ada panduan posisi/warna darah, tanda saat menyerang dan tanda saat monster kalah. Tombol potion dan opsi teknis ada di **Tampilkan potion dan pengaturan lanjutan**.
+1. Tekan **1. Ajari monster / Belajar otomatis**. Ambil gambar, kotaki area pencarian, lalu kotaki satu monster. Untuk monster yang berputar/bergerak, jalankan **Belajar otomatis 15 detik** agar beberapa pose nyata terkumpul.
+2. Tekan **2. Coba deteksi pada gambar terbaru (tanpa menyerang)** berulang kali pada pose/jarak yang berbeda. Target tahap ini hanya: monster yang benar diberi kotak, objek lain tidak.
+3. **Berhenti di sini dulu.** v0.3.1 sengaja tidak meminta tanda menyerang, tanda kalah, potion, loot, atau input serangan. Combat baru dibuka setelah deteksi stabil pada gameplay nyata.
 
 Alasan **Lanjut/Simpan** belum aktif selalu terlihat di footer. **Simpan contoh dulu (belum teruji)** menyimpan referensi tanpa harus mengesahkan hasil deteksi atau mengaktifkan input. Kegagalan capture menampilkan error asli dan dapat dicoba ulang. Ukuran gambar baru meminta persetujuan reset draft, bukan menghapus profil di disk diam-diam.
 
@@ -24,11 +24,11 @@ Learning mode tidak mengirim klik/tombol game dan tidak menandai input sebagai t
 
 ## What is implemented
 
-Compact trainer UI, beginner setup and separate advanced editor; local profile CRUD; screenshot region selection and PNG templates; multi-scale OpenCV matching; calibrated HP/AP estimates; explicit input-free observation; guarded select/engage/combat/loot state machine; potion rules; bounded pickup requests; F8 start/resume, F9 pause, F10 stop; fresh-frame/window/foreground/identity/geometry guards; rotating logs; optional capped failure screenshots.
+Current active milestone: compact trainer UI, beginner setup, automatic multi-pose learning, local profile CRUD, screenshot region selection, multi-scale/mirrored OpenCV matching, one-shot and continuous **input-free detection**, logs, and Windows capture safeguards. Combat/loot/potion code remains in the repository for later work but is hidden/disabled in the v0.3.1 UI and cannot be armed from the normal start path.
 
 **Client capture/input, monster recognition, HP/AP readings, valid engagement/completion signals, actual pickup binding and game FPS impact still need supervised testing.** No pretrained model, client-calibrated profile or user gameplay screenshot is bundled. Template appearance can fail with changing camera, scale, pose, occlusion or similar monsters.
 
-Default is observation without clicks. Live input requires verified bindings/calibration, explicit opt-in, an environment permitting automation, working hotkeys and a visible game wholly on the primary monitor. Screenshot-only capture can also use secondary monitors inside the Windows virtual desktop. No background/minimized gameplay or multi-client operation. A missing monster is not proof of defeat; a pickup key is not proof an item was acquired.
+v0.3.1 is observation-only from the UI: it does not arm attack/potion/loot input. Screenshot-only capture can use visible windows in the Windows virtual desktop. No background/minimized gameplay or multi-client operation. Combat semantics such as “attacking” or “defeated” are intentionally deferred instead of being guessed from arbitrary screenshots.
 
 **Stop inhibits this application's future inputs and releases held inputs. It cannot guarantee cancellation of game-native auto-attack already activated.** Cancel that in the game manually as necessary. Do not use the keyboard/mouse for unrelated activities during a live session.
 
