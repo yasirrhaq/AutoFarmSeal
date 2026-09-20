@@ -25,17 +25,15 @@ Aplikasi mengikuti target dan memilih beberapa crop nyata yang cukup berbeda sec
 
 Tekan **2. Coba deteksi (tidak menyerang)**. Saat aplikasi mengecil, klik game bila belum aktif; pengambilan menunggu hingga 15 detik. Hasil satu gambar akan muncul otomatis; tidak perlu mengejar jendela pratinjau di atas game. Angka/kotak yang cocok pada gambar contoh sendiri bukan jaminan pada pose atau jarak lain.
 
-## Ketiga: persiapan farming
+## Ketiga: berhenti setelah deteksi dulu
 
-Tekan **3. Siapkan farming**. Pilih kebutuhan yang belum tersimpan. Ada panduan terpisah untuk posisi darah, mengambil warnanya dengan satu klik, tanda saat menyerang, dan tanda saat monster kalah. Tombol serangan diatur tanpa harus mengubah angka warna atau skor deteksi.
+Untuk v0.3.1 **jangan cari atau menyimpan “tanda menyerang” maupun “tanda monster kalah”**. Tahap aktif hanya image recognition. Ulangi **Coba deteksi** pada beberapa keadaan nyata: depan, samping, belakang, bergerak, dekat, dan lebih jauh. Yang kita cari adalah konsistensi bounding box pada monster yang benar serta rendahnya salah deteksi ke pohon/batu/UI.
 
-**Belum tahu tanda saat menyerang atau kalah? Berhenti di uji deteksi.** Jangan membuat kotak pada objek sembarang untuk melewati syarat. Rekaman singkat satu pertarungan (sebelum serangan sampai hasilnya terlihat) membantu pengembang memilih pemeriksaan yang sesuai client. Saat ini game masih harus menyediakan tanda yang dapat dibedakan secara andal.
-
-Setelah pengaturan benar-benar diuji secara manual, buka **Tampilkan potion dan pengaturan lanjutan**, atur tombol potion/pickup yang memang digunakan, lalu izinkan klik otomatis dan konfirmasikan lingkungan yang memperbolehkannya. F8 memulai/melanjutkan, F9 menjeda, dan F10 menghentikan input bot. Auto-attack bawaan game mungkin tetap perlu dihentikan manual. Mulai dari satu pertarungan dengan pengawasan.
+Tombol serangan, potion, loot, indikator combat, dan logika monster kalah tetap ditunda. Kalau game tidak memiliki tanda eksplisit, kita tidak akan memaksa satu screenshot “mati” sebagai bukti. Setelah detection stabil, mekanik combat akan dirancang dari sinyal yang benar-benar tersedia di client dan diuji satu per satu.
 
 ## Masalah yang umum
 
-**Game tidak muncul:** buka game terlebih dahulu, jangan diminimalkan, lalu tekan Cari ulang. Mode input hanya Windows dan satu window terlihat pada monitor utama.
+**Game tidak muncul:** buka game terlebih dahulu, jangan diminimalkan, lalu tekan Cari ulang. Capture/deteksi memakai window Windows yang terlihat; mode windowed didukung.
 
 **Gambar belum diambil:** setelah menekan Ambil gambar, klik game bila belum aktif (ditunggu hingga 15 detik). Jangan klik aplikasi bot selama pengambilan.
 
@@ -43,7 +41,7 @@ Setelah pengaturan benar-benar diuji secara manual, buka **Tampilkan potion dan 
 
 **Darah belum terbaca:** kotaki bagian dalam batang dari kiri sampai kanan termasuk bagian kosong, lalu klik isi yang berwarna. Hindari angka/tulisan/bingkai.
 
-**Aplikasi dijeda saat pindah jendela:** ini pengaman. Pengujian gambar hanya sekali akan otomatis kembali. Sesi farming membutuhkan game tetap aktif dan dilanjutkan secara manual.
+**Aplikasi dijeda saat pindah jendela:** ini pengaman. Pengujian gambar hanya sekali akan otomatis kembali. Deteksi kontinu membutuhkan game tetap aktif; tahap farming belum digunakan.
 
 Build dan tes UI tidak membuktikan kompatibilitas game, hasil farming, atau pengaruh pada FPS. Tidak ada navigasi map, pemulihan setelah mati, atau farming minimisasi di versi ini.
 
