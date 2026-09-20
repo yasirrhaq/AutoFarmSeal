@@ -1,4 +1,4 @@
-# Mulai memakai AutoFarmSeal 0.2.1
+# Mulai memakai AutoFarmSeal 0.3.1
 
 ## Buka aplikasinya
 
@@ -14,6 +14,12 @@ Pilih game pada daftar di bagian atas, lalu tekan **1. Mulai pengaturan mudah**.
 4. **Cek hasil.** Tekan Coba cari monster. Kotak hasil harus mengelilingi monster, bukan batu atau pohon. Coba gambar lain juga, periksa hasil, lalu Simpan dan selesai.
 
 Panduan ini tidak mengeklik game. Batal tidak mengganti profil atau menyimpan gambar percobaan. Ukuran berbeda meminta persetujuan untuk mengatur ulang draft. Profil lama di disk tetap utuh sampai Simpan ditekan.
+
+## Belajar otomatis untuk monster bergerak
+
+Setelah satu monster dikotaki dan sampai halaman review, tekan **Belajar otomatis 15 detik**. Aplikasi akan mengecil; pastikan game yang dipilih aktif lalu biarkan monster tetap terlihat dan bergerak normal. Tidak ada input game yang dikirim selama belajar.
+
+Aplikasi mengikuti target dan memilih beberapa crop nyata yang cukup berbeda secara otomatis. Kamu tidak perlu mengambil depan/kiri/kanan/belakang satu per satu. Mirror kiri/kanan juga dicoba saat deteksi tanpa membuat file contoh tambahan. Jika target tertutup, keluar dari area pencarian, atau tracking berpindah/kehilangan target, proses berhenti dengan pesan dan contoh parsial tidak otomatis dianggap benar. Setelah belajar selesai, **uji deteksi pada gambar terbaru** sebelum menyiapkan farming.
 
 ## Kedua: cek pada gambar terbaru
 
