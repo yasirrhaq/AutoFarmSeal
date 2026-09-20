@@ -280,3 +280,48 @@ def test_hotkey_cannot_arm_while_auto_learning(qtbot, tmp_path, monkeypatch):
     window.learning_wait = None
     window.close()
     qtbot.waitUntil(lambda: not window.worker.is_alive())
+
+
+def test_detection_milestone_hides_combat_setup_and_live_input(qtbot, tmp_path):
+    window = MainWindow(Store(tmp_path), smoke=True)
+    qtbot.addWidget(window)
+    window.show()
+    assert not hasattr(window, "prepare_button")
+    window.advanced_button.setChecked(True)
+    assert window.live.isHidden()
+    assert not window.live.isEnabled()
+    assert "deteksi" in window.start_button.text().lower()
+    window.close()
+    qtbot.waitUntil(lambda: not window.worker.is_alive())
+
+
+def test_start_session_forces_observation_even_if_live_checked_programmatically(qtbot, tmp_path, monkeypatch):
+    import numpy as np
+    from autofarmseal.model import Rect
+    from autofarmseal.runtime import RunSpec
+
+    window = MainWindow(Store(tmp_path), smoke=True)
+    qtbot.addWidget(window)
+    frame = np.random.default_rng(91).integers(10, 240, (180, 280, 3), dtype=np.uint8)
+    p = window.current()
+    p.width, p.height = 280, 180
+    p.regions["world"] = Rect(0, 0, 280, 180)
+    p.templates["monster"] = [window.store.image(frame[40:90, 80:130])]
+    window.store.save(p)
+    window.profiles[0] = p
+
+    seen = []
+    fake_window = object()
+    monkeypatch.setattr(window, "spec",
+                        lambda profile, live=False, image=None:
+                        (seen.append(live) or RunSpec(profile, window=fake_window, image=image, live=live)))
+    commands = []
+    monkeypatch.setattr(window.worker, "command",
+                        lambda kind, spec=None: commands.append((kind, spec)) or len(commands))
+    window.live.setChecked(True)
+    window.start_session()
+    assert seen[-1] is False
+    assert commands[-1][0] == "arm"
+    assert commands[-1][1].live is False
+    window.close()
+    qtbot.waitUntil(lambda: not window.worker.is_alive())
