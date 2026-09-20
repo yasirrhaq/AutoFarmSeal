@@ -827,7 +827,10 @@ class MainWindow(QMainWindow):
         frame = snap.get("image")
         if frame is not None:
             self.last_image = frame
-            self.preview_boxes = [(d.box, f"{d.score:.2f}") for d in obs.detections] if obs else []
+            self.preview_boxes = [
+                (d.box, ("~" if d.temporal else "") + f"{d.score:.2f}")
+                for d in obs.detections
+            ] if obs else []
             if (self.preview_dialog and self.preview_dialog.isVisible()
                     and obs and self.displayed_frame != obs.captured_at):
                 self.displayed_frame = obs.captured_at

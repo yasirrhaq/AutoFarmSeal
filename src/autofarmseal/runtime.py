@@ -328,8 +328,13 @@ class Worker(threading.Thread):
             frame, window, captured_at = self._capture()
         self.last_frame = frame
         search = not self.engine or self.engine.state in {State.ARMED, State.SEARCH}
-        obs = detector.observe(frame, captured_at, search=search,
-                               cancelled=lambda: self.closing.is_set() or epoch != self.epoch)
+        obs = detector.observe(
+            frame, captured_at, search=search,
+            cancelled=lambda: self.closing.is_set() or epoch != self.epoch,
+            # Temporal smoothing is observation-only. Future live input must never
+            # act on a held/weak frame without its own validated combat design.
+            temporal=(self.engine is None and spec.image is None),
+        )
         if epoch != self.epoch or self.closing.is_set():
             return
         now = time.monotonic()

@@ -158,8 +158,9 @@ class MultiPoseLearner:
     @staticmethod
     def _features(gray: np.ndarray, box: Rect) -> np.ndarray:
         mask = np.zeros_like(gray, dtype=np.uint8)
-        margin_x = max(1, box.w // 10)
-        margin_y = max(1, box.h // 10)
+        # Prefer the more stable center body over highly deformable extremities.
+        margin_x = max(1, round(box.w * 0.16))
+        margin_y = max(1, round(box.h * 0.16))
         x1, y1 = box.x + margin_x, box.y + margin_y
         x2, y2 = box.right - margin_x, box.bottom - margin_y
         if x2 <= x1 or y2 <= y1:
@@ -216,7 +217,10 @@ class MultiPoseLearner:
     def _consider(self, frame: np.ndarray, now: float, *, force: bool = False) -> bool:
         if len(self.samples) >= self.max_samples or (not force and now-self.last_sample_time < 0.55):
             return False
-        padded = _expanded(self.box, 0.06, self.world) or self.box
+        # Animated/deformable targets (bat wings, slime, cloth) need breathing room.
+        # The detector later down-weights this outer context, so the margin does not
+        # become the primary identity signal.
+        padded = _expanded(self.box, 0.18, self.world) or self.box
         crop = padded.crop(frame).copy()
         if min(crop.shape[:2]) < 10:
             return False

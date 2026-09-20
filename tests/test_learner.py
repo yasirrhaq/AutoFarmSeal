@@ -68,3 +68,86 @@ def test_detector_can_use_horizontal_mirror_without_extra_saved_template():
     assert Detector(p, lambda _path: template).observe(frame, 1).detections
     p.mirror_templates = False
     assert not Detector(p, lambda _path: template).observe(frame, 1).detections
+
+
+def bat_patch(wings_up=True):
+    image = np.zeros((50, 70, 3), np.uint8)
+    cv2.ellipse(image, (35, 27), (7, 12), 0, 0, 360, (210, 210, 210), -1)
+    cv2.circle(image, (35, 16), 6, (235, 235, 235), -1)
+    cv2.circle(image, (33, 15), 1, (20, 20, 20), -1)
+    cv2.circle(image, (37, 15), 1, (20, 20, 20), -1)
+    if wings_up:
+        left = np.array([[29, 22], [8, 4], [3, 18], [27, 31]], np.int32)
+        right = np.array([[41, 22], [62, 4], [67, 18], [43, 31]], np.int32)
+    else:
+        left = np.array([[29, 22], [7, 36], [12, 48], [30, 33]], np.int32)
+        right = np.array([[41, 22], [63, 36], [58, 48], [40, 33]], np.int32)
+    cv2.fillConvexPoly(image, left, (150, 170, 190))
+    cv2.fillConvexPoly(image, right, (150, 170, 190))
+    cv2.line(image, (35, 27), (35, 41), (80, 80, 80), 2)
+    return image
+
+
+def bat_scene(patch):
+    frame = np.random.default_rng(71).integers(0, 35, (180, 280, 3), np.uint8)
+    frame[70:120, 120:190] = patch
+    return frame
+
+
+def bat_profile(animated):
+    p = Profile(width=280, height=180, regions={"world": Rect(0, 0, 280, 180)},
+                threshold=0.86, scales=[1.0], animated_target=animated,
+                mirror_templates=False)
+    p.templates["monster"] = ["templates/bat.png"]
+    p.templates["combat"] = []
+    p.templates["defeat"] = []
+    return p
+
+
+def test_animated_detector_reacquires_stable_body_when_wings_change_pose():
+    seed = bat_patch(True)
+    target = bat_patch(False)
+    frame = bat_scene(target)
+    strict = Detector(bat_profile(False), lambda _path: seed).observe(frame, 1)
+    assert not strict.detections
+    tolerant = Detector(bat_profile(True), lambda _path: seed).observe(frame, 1)
+    assert tolerant.detections
+    best = tolerant.detections[0]
+    assert best.box == Rect(120, 70, 70, 50)
+    assert not best.strong
+    assert best.score >= 0.68
+
+
+def test_temporal_mode_confirms_weak_deformable_match_on_second_frame():
+    seed = bat_patch(True)
+    frame = bat_scene(bat_patch(False))
+    detector = Detector(bat_profile(True), lambda _path: seed)
+    first = detector.observe(frame, 1, temporal=True)
+    second = detector.observe(frame, 1.2, temporal=True)
+    assert not first.detections
+    assert second.detections
+    assert second.detections[0].temporal
+    assert not second.detections[0].strong
+
+
+def test_temporal_mode_bridges_only_one_missing_scan():
+    seed = bat_patch(True)
+    detector = Detector(bat_profile(True), lambda _path: seed)
+    strong = bat_scene(seed)
+    blank = np.random.default_rng(99).integers(0, 35, (180, 280, 3), np.uint8)
+    assert detector.observe(strong, 1, temporal=True).detections
+    held = detector.observe(blank, 1.2, temporal=True)
+    assert held.detections and held.detections[0].temporal
+    assert not detector.observe(blank, 1.4, temporal=True).detections
+
+
+def test_learning_samples_have_margin_for_fast_deforming_extremities():
+    seed = monster_patch()
+    first = frame_at(80, 90, seed)
+    learner = MultiPoseLearner(first, seed, Rect(20, 40, 320, 180),
+                               initial_box=Rect(80, 90, 42, 50), max_samples=3)
+    learner.update(frame_at(83, 90, seed), 1.0)
+    samples = learner.finalize()
+    assert samples
+    assert samples[0].shape[1] > seed.shape[1]
+    assert samples[0].shape[0] > seed.shape[0]

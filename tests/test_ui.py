@@ -265,6 +265,7 @@ def test_guide_auto_learning_stages_multiple_real_examples(qtbot, tmp_path):
     assert len(guide.pending) == before + 2
     assert "75 frame" in guide.feedback.text()
     assert "2 contoh visual baru" in guide.feedback.text()
+    assert guide.p.animated_target
     assert not guide.p.input_verified
     guide.reject()
 

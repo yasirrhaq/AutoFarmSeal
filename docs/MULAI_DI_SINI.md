@@ -1,4 +1,4 @@
-# Mulai memakai AutoFarmSeal 0.3.1
+# Mulai memakai AutoFarmSeal 0.3.2
 
 ## Buka aplikasinya
 
@@ -20,6 +20,12 @@ Panduan ini tidak mengeklik game. Batal tidak mengganti profil atau menyimpan ga
 Setelah satu monster dikotaki dan sampai halaman review, tekan **Belajar otomatis 15 detik**. Aplikasi akan mengecil; pastikan game yang dipilih aktif lalu biarkan monster tetap terlihat dan bergerak normal. Tidak ada input game yang dikirim selama belajar.
 
 Aplikasi mengikuti target dan memilih beberapa crop nyata yang cukup berbeda secara otomatis. Kamu tidak perlu mengambil depan/kiri/kanan/belakang satu per satu. Mirror kiri/kanan juga dicoba saat deteksi tanpa membuat file contoh tambahan. Jika target tertutup, keluar dari area pencarian, atau tracking berpindah/kehilangan target, proses berhenti dengan pesan dan contoh parsial tidak otomatis dianggap benar. Setelah belajar selesai, **uji deteksi pada gambar terbaru** sebelum menyiapkan farming.
+
+## Jika monster terbang/berubah bentuk seperti kelelawar
+
+Tetap kotaki monster satu kali lalu jalankan **Belajar otomatis 15 detik**. Biarkan beberapa fase animasi muncul. v0.3.2 otomatis menandai profil hasil multi-pose sebagai target animasi: crop diberi ruang ekstra untuk sayap/anggota tubuh, bagian tengah tubuh diberi bobot lebih besar, dan deteksi kontinu memakai dukungan beberapa frame agar satu kepakan yang sangat berbeda tidak langsung membuat target hilang.
+
+Pada pratinjau kontinu, skor dengan awalan `~` berarti posisi sedang dipertahankan/dikonfirmasi dari frame berdekatan. Ini membantu stabilitas visual tetapi bukan bukti identitas 100%. Jika kotak mulai pindah ke pohon/player/monster lain, hentikan dan ulangi proses belajar pada area yang lebih bersih.
 
 ## Kedua: cek pada gambar terbaru
 

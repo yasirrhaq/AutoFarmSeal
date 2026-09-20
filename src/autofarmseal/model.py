@@ -65,6 +65,7 @@ class Profile:
     signal_threshold: float = 0.93
     scales: list[float] = field(default_factory=lambda: [0.85, 1.0, 1.15])
     mirror_templates: bool = True
+    animated_target: bool = False
     learn_seconds: int = 15
     learn_samples: int = 10
     click_x: float = 0.5
@@ -154,7 +155,7 @@ class Profile:
             elif key in integer_fields and type(v) is not int:
                 errors.append(f"{key} harus bilangan bulat.")
         for key in ("hp_enabled", "ap_enabled", "loot_enabled", "ctrl_click",
-                    "input_verified", "screenshot_failures", "mirror_templates"):
+                    "input_verified", "screenshot_failures", "mirror_templates", "animated_target"):
             if type(getattr(self, key)) is not bool:
                 errors.append(f"{key} harus true/false.")
         if not isinstance(self.scales, list) or not 1 <= len(self.scales) <= 5 or any(

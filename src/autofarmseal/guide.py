@@ -298,12 +298,16 @@ class SetupGuide(QDialog):
             self.p.templates["monster"].append(temporary)
             self.pending[temporary] = crop.copy()
             added += 1
+        if added >= 2:
+            # Several real learned poses enable the deformable-target path.
+            self.p.animated_target = True
         self.p.input_verified = False
         self.test_done = False
         self.ack.setChecked(False)
         if added:
+            mode = " Mode target bergerak aktif." if self.p.animated_target else ""
             self.learn_summary = (f"Belajar selesai: {frames} frame dianalisis, {added} contoh visual baru dipilih "
-                                  f"(confidence tracking terakhir {confidence:.0%}).")
+                                  f"(confidence tracking terakhir {confidence:.0%})." + mode)
             if error:
                 self.learn_summary += " Tracking berhenti lebih awal: " + error
         else:

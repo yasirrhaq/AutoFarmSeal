@@ -1,6 +1,6 @@
 # AutoFarmSeal
 
-**v0.3.1 — detection-first milestone.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
+**v0.3.2 — animated/deformable target recognition.** Aplikasi desktop Windows untuk prototipe penelitian computer vision, Python + PySide6. Bukan bot Seal yang sudah terverifikasi untuk ditinggal tanpa pengawasan.
 
 ## Mulai tanpa mengedit kode
 
@@ -21,6 +21,12 @@ Selesai mengikuti panduan tidak otomatis mengizinkan klik atau membuktikan akura
 Untuk monster yang berubah arah/pose, tandai satu monster sekali pada panduan lalu tekan **Belajar otomatis 15 detik**. Selama proses ini aplikasi hanya membaca layar: optical-flow tracking mengikuti target, pencarian visual mencoba memperoleh kembali target bila tracking melemah, dan hanya crop nyata yang cukup berbeda yang ditambahkan sebagai contoh. Runtime juga dapat mencoba mirror kiri/kanan tanpa menyimpan file duplikat.
 
 Learning mode tidak mengirim klik/tombol game dan tidak menandai input sebagai terverifikasi. Pertahankan ukuran window, biarkan target tetap terlihat, dan uji hasilnya pada frame baru. Occlusion, target yang sangat mirip, perubahan kamera ekstrem, atau perpindahan ke objek lain masih dapat menggagalkan tracking; bila itu terjadi, ulangi belajar atau tambahkan contoh manual. Ini belum SAM/YOLO/semantic recognition.
+
+## Target animasi cepat seperti kelelawar
+
+v0.3.2 menambahkan jalur khusus otomatis untuk profil yang sudah memperoleh beberapa pose dari **Belajar otomatis**. Crop hasil belajar diberi margin lebih besar, pencocokan memberi bobot lebih besar pada bagian tengah tubuh, dan target yang lebar seperti kelelawar dapat dicari ulang dari core tubuh saat bentuk sayap berubah ekstrem. Pada deteksi kontinu, kecocokan lemah harus didukung frame berdekatan dan satu frame yang miss dapat dijembatani untuk mengurangi flicker. Label skor yang diawali `~` berarti hasil sedang ditopang temporal, bukan match kuat satu frame.
+
+Heuristik ini bukan segmentation/YOLO dan tidak menjamin semua monster terbang akan benar. Core-search hanya dijalankan sebagai fallback ketika tidak ada strict pose match dan jumlah variannya dibatasi agar beban CPU tetap terkendali. Jalur temporal hanya digunakan pada observasi tanpa input; combat tetap dinonaktifkan pada milestone ini.
 
 ## What is implemented
 
